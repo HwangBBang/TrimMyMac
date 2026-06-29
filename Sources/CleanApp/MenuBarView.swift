@@ -98,7 +98,7 @@ struct MenuBarView: View {
         // from sample() or the pressure callback) automatically triggers re-render.
         // The old onReceive($latest) duplicated that update → removed.
         .sheet(isPresented: $showAppDelete) {
-            PlaceholderPanel(title: "앱 삭제", message: "앱 제거 패널은 이후 작업에서 연결됩니다.")
+            UninstallPanel()
         }
     }
 
