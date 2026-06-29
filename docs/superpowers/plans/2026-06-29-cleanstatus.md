@@ -6,7 +6,7 @@
 
 **Architecture:** Two-layer Swift Package — a UI-free `CleanCore` engine (metrics, scanning, dedup, uninstall; all deletions funneled through a single `SafeRemover`) and a thin SwiftUI `CleanApp` menu-bar layer (`MenuBarExtra`). Built with Swift Package Manager plus a `build-app.sh` that assembles a **self-signed `.app`** (no Xcode required).
 
-**Tech Stack:** Swift 6 (strict concurrency), SwiftUI `MenuBarExtra`, AppKit (`NSWorkspace`/`NSRunningApplication`), CryptoKit (SHA256), Darwin syscalls (`lstat`, `host_statistics64`, `sysctl`, `getattrlist`), XCTest. macOS 26 (Tahoe), Apple Silicon.
+**Tech Stack:** Swift 6 (strict concurrency), SwiftUI `MenuBarExtra`, AppKit (`NSWorkspace`/`NSRunningApplication`), CryptoKit (SHA256), Darwin syscalls (`lstat`, `host_statistics64`, `sysctl`, `getattrlist`), **Swift Testing**. macOS 26 (Tahoe), Apple Silicon.
 
 ## Global Constraints
 
@@ -18,8 +18,8 @@
 - **SAFETY — preview:** always show items + total reclaimable bytes before trashing.
 - **Memory:** read-only monitor only (`DispatchSource` pressure + `host_statistics64` + `vm.swapusage`). NO `purge`/RAM-clear action button (decision 2).
 - **Code signing:** a **named self-signed Code Signing identity** (NOT ad-hoc `-s -`) so TCC / Full Disk Access persists across rebuilds (Codex MUST-1 fix).
-- **COMMIT POLICY (user CLAUDE.md):** the USER runs `git commit`. Each task's final step only stages (`git add`) and prints a recommended message — never auto-run `git commit`.
-- **Tests:** run with `swift test --filter <Name>`.
+- **COMMIT POLICY:** the user approved per-task commits by subagents *for this personal repo only* (overriding CLAUDE.md's user-commits rule). Each task commits its own work; end commit bodies with `Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>`.
+- **Tests:** use **Swift Testing** (`import Testing` / `@Test` / `#expect`), NOT XCTest — `XCTest.framework` is unavailable with Command-Line-Tools-only (no Xcode). Run with **`./scripts/test.sh --filter <Name>`** (wrapper adds the `-F` path so the SPM runner sees `Testing.framework`); bare `swift test` silently runs 0 tests. *(This supersedes the XCTest code in each task brief — translate it to Swift Testing.)*
 - **Build order:** implement tasks in number order. **Task 0 is a spike** — verify the menu-bar app builds+launches before building features on it.
 
 ---
