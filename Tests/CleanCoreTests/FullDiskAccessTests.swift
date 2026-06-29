@@ -26,6 +26,12 @@ struct FullDiskAccessTests {
         #expect(FullDiskAccessClassifier.needsFullDiskAccess(for: err) == true)
     }
 
+    // POSIXError.EACCES value -> true
+    @Test func posixErrorEACCESNeedsFullDiskAccess() {
+        let err: Error = POSIXError(.EACCES)
+        #expect(FullDiskAccessClassifier.needsFullDiskAccess(for: err) == true)
+    }
+
     // Foundation's Cocoa permission error (NSFileReadNoPermissionError = 257) -> true
     @Test func cocoaNoPermissionErrorNeedsFullDiskAccess() {
         let err = NSError(domain: NSCocoaErrorDomain, code: NSFileReadNoPermissionError, userInfo: nil)

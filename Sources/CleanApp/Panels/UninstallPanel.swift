@@ -5,11 +5,117 @@ import CleanCore
 
 // MARK: - Phase enum
 
-private enum UninstallPhase {
+enum UninstallPhase {
     case idle
+    case loading(URL)
     case ready(UninstallPlan)
     case done(UninstallPlan, TrashOutcome)
     case error(String)
+
+    /// True while a plan is ready to act on or a trash operation has completed.
+    var showReset: Bool {
+        switch self {
+        case .ready, .done: return true
+        default: return false
+        }
+    }
+}
+
+// MARK: - ViewModel
+
+@MainActor
+final class UninstallPanelModel: ObservableObject {
+    @Published var phase: UninstallPhase = .idle
+    @Published var selection: Set<UUID> = []
+    @Published var showFDASheet = false
+
+    private var lastAppURL: URL?
+    private var planTask: Task<Void, Never>?
+    private var innerPlanTask: Task<UninstallPlan, Error>?
+
+    let home: URL
+
+    init(home: URL = FileManager.default.homeDirectoryForCurrentUser) {
+        self.home = home
+    }
+
+    // MARK: Plan loading
+
+    func loadPlan(appURL: URL) {
+        innerPlanTask?.cancel()
+        planTask?.cancel()
+        innerPlanTask = nil
+        planTask = nil
+
+        lastAppURL = appURL
+        selection = []
+        phase = .loading(appURL)
+
+        let homeURL = home
+        let inner = Task.detached(priority: .userInitiated) {
+            () throws -> UninstallPlan in
+            let scanner = CleanCore.Scanner(ignore: .default, probe: DefaultStatProbe())
+            let uninstaller = AppUninstaller(scanner: scanner, home: homeURL)
+            return try uninstaller.plan(for: appURL)
+        }
+        innerPlanTask = inner
+
+        planTask = Task { [weak self] in
+            do {
+                let plan = try await inner.value
+                guard let self else { return }
+                self.innerPlanTask = nil
+                var preselected = Set<UUID>()
+                if plan.app.isAutoSelected { preselected.insert(plan.app.id) }
+                for item in plan.leftovers where item.isAutoSelected {
+                    preselected.insert(item.id)
+                }
+                self.selection = preselected
+                self.phase = .ready(plan)
+            } catch is CancellationError {
+                // Phase already transitioned by cancelLoad(); nothing to do here.
+            } catch {
+                guard let self else { return }
+                self.innerPlanTask = nil
+                if FullDiskAccessClassifier.needsFullDiskAccess(for: error) {
+                    self.phase = .idle
+                    self.showFDASheet = true
+                } else {
+                    self.phase = .error("Could not read app: \(error.localizedDescription)")
+                }
+            }
+        }
+    }
+
+    func cancelLoad() {
+        innerPlanTask?.cancel()
+        planTask?.cancel()
+        innerPlanTask = nil
+        planTask = nil
+        phase = .idle
+    }
+
+    func retryLastApp() {
+        if let url = lastAppURL { loadPlan(appURL: url) }
+    }
+
+    // MARK: Trash
+
+    func trashSelected(plan: UninstallPlan) {
+        let all = [plan.app] + plan.leftovers
+        let chosen = all.filter { selection.contains($0.id) }
+        let remover = SafeRemover(probe: DefaultStatProbe(), fileManager: .default)
+        let outcome = remover.trash(chosen)
+        phase = .done(plan, outcome)
+    }
+
+    // MARK: Reset
+
+    func reset() {
+        cancelLoad()
+        selection = []
+        lastAppURL = nil
+    }
 }
 
 // MARK: - UninstallPanel
@@ -19,26 +125,22 @@ private enum UninstallPhase {
 /// → SafeRemover.trash(selected) → outcome.
 @MainActor
 struct UninstallPanel: View {
-    /// Home directory used by AppUninstaller to locate leftovers.
-    let home: URL
-
-    @State private var phase: UninstallPhase = .idle
-    @State private var selection: Set<UUID> = []
-    @State private var showFDASheet = false
-    @State private var lastAppURL: URL?
+    @StateObject private var model: UninstallPanelModel
     @State private var isDropTargeted = false
 
     init(home: URL = FileManager.default.homeDirectoryForCurrentUser) {
-        self.home = home
+        _model = StateObject(wrappedValue: UninstallPanelModel(home: home))
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             headerBar
 
-            switch phase {
+            switch model.phase {
             case .idle:
                 dropZone
+            case .loading(let appURL):
+                loadingView(appURL)
             case .ready(let plan):
                 planView(plan)
             case .done(let plan, let outcome):
@@ -53,13 +155,16 @@ struct UninstallPanel: View {
         }
         .padding(16)
         .frame(width: 460)
-        .sheet(isPresented: $showFDASheet) {
+        .onDisappear {
+            model.cancelLoad()
+        }
+        .sheet(isPresented: $model.showFDASheet) {
             FullDiskAccessSheet(
                 onRetry: {
-                    showFDASheet = false
-                    if let url = lastAppURL { loadPlan(appURL: url) }
+                    model.showFDASheet = false
+                    model.retryLastApp()
                 },
-                onDismiss: { showFDASheet = false }
+                onDismiss: { model.showFDASheet = false }
             )
         }
     }
@@ -71,11 +176,14 @@ struct UninstallPanel: View {
             Label("Uninstall App", systemImage: "trash.square")
                 .font(.headline)
             Spacer()
-            Button("Choose .app…") { chooseApp() }
-            if case .ready = phase {
-                Button("Reset") { reset() }
-            } else if case .done = phase {
-                Button("Reset") { reset() }
+            if case .loading = model.phase {
+                ProgressView().controlSize(.small)
+                Button("Cancel") { model.cancelLoad() }
+            } else {
+                Button("Choose .app…") { chooseApp() }
+                if model.phase.showReset {
+                    Button("Reset") { model.reset() }
+                }
             }
         }
     }
@@ -97,6 +205,16 @@ struct UninstallPanel: View {
             .onDrop(of: [.fileURL], isTargeted: $isDropTargeted) { providers in
                 handleDrop(providers)
             }
+    }
+
+    private func loadingView(_ appURL: URL) -> some View {
+        VStack(spacing: 8) {
+            ProgressView()
+            Text("Analysing \(appURL.lastPathComponent)…")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, minHeight: 120)
     }
 
     private func planView(_ plan: UninstallPlan) -> some View {
@@ -124,28 +242,28 @@ struct UninstallPanel: View {
 
             let allItems = [plan.app] + plan.leftovers
             let selectedBytes = allItems
-                .filter { selection.contains($0.id) }
+                .filter { model.selection.contains($0.id) }
                 .reduce(Int64(0)) { $0 + $1.allocatedSize }
 
             HStack {
-                Text("Selected \(selection.count) of \(allItems.count) • \(byteString(selectedBytes))")
+                Text("Selected \(model.selection.count) of \(allItems.count) • \(byteString(selectedBytes))")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                 Spacer()
-                Button("Move \(selection.count) Item(s) to Trash") {
-                    trashSelected(plan)
+                Button("Move \(model.selection.count) Item(s) to Trash") {
+                    model.trashSelected(plan: plan)
                 }
                 .buttonStyle(.borderedProminent)
-                .disabled(selection.isEmpty)
+                .disabled(model.selection.isEmpty)
             }
         }
     }
 
     private func itemRow(for item: ScanItem, isApp: Bool) -> some View {
         let bound = Binding<Bool>(
-            get: { selection.contains(item.id) },
+            get: { model.selection.contains(item.id) },
             set: { isOn in
-                if isOn { selection.insert(item.id) } else { selection.remove(item.id) }
+                if isOn { model.selection.insert(item.id) } else { model.selection.remove(item.id) }
             }
         )
         return HStack(alignment: .top, spacing: 8) {
@@ -206,7 +324,7 @@ struct UninstallPanel: View {
         panel.allowedContentTypes = [.application]
         panel.directoryURL = URL(fileURLWithPath: "/Applications")
         if panel.runModal() == .OK, let url = panel.url {
-            loadPlan(appURL: url)
+            model.loadPlan(appURL: url)
         }
     }
 
@@ -214,47 +332,9 @@ struct UninstallPanel: View {
         guard let provider = providers.first else { return false }
         _ = provider.loadObject(ofClass: URL.self) { url, _ in
             guard let url, url.pathExtension == "app" else { return }
-            Task { @MainActor in self.loadPlan(appURL: url) }
+            Task { @MainActor in model.loadPlan(appURL: url) }
         }
         return true
-    }
-
-    private func loadPlan(appURL: URL) {
-        lastAppURL = appURL
-        selection = []
-        let scanner = CleanCore.Scanner(ignore: .default, probe: DefaultStatProbe())
-        let uninstaller = AppUninstaller(scanner: scanner, home: home)
-        do {
-            let newPlan = try uninstaller.plan(for: appURL)
-            // Auto-check exact matches; leave ambiguous ones unchecked.
-            var preselected = Set<UUID>()
-            if newPlan.app.isAutoSelected { preselected.insert(newPlan.app.id) }
-            for item in newPlan.leftovers where item.isAutoSelected {
-                preselected.insert(item.id)
-            }
-            selection = preselected
-            phase = .ready(newPlan)
-        } catch {
-            if FullDiskAccessClassifier.needsFullDiskAccess(for: error) {
-                showFDASheet = true
-            } else {
-                phase = .error("Could not read app: \(error.localizedDescription)")
-            }
-        }
-    }
-
-    private func trashSelected(_ plan: UninstallPlan) {
-        let all = [plan.app] + plan.leftovers
-        let chosen = all.filter { selection.contains($0.id) }
-        let remover = SafeRemover(probe: DefaultStatProbe(), fileManager: .default)
-        let outcome = remover.trash(chosen)
-        phase = .done(plan, outcome)
-    }
-
-    private func reset() {
-        phase = .idle
-        selection = []
-        lastAppURL = nil
     }
 
     private func byteString(_ bytes: Int64) -> String {

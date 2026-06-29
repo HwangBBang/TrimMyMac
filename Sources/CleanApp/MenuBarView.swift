@@ -74,9 +74,6 @@ struct MenuBarView: View {
     // openWindow environment action for opening named windows.
     @Environment(\.openWindow) private var openWindow
 
-    // Placeholder panel toggle for 앱 삭제 (later task).
-    @State private var showAppDelete = false    // 앱 삭제
-
     private let disk = DiskMetrics()
     private let tick = Timer.publish(every: 3, on: .main, in: .common).autoconnect()
 
@@ -97,9 +94,6 @@ struct MenuBarView: View {
         // memoryMonitor is @ObservedObject: any @Published change (including $latest
         // from sample() or the pressure callback) automatically triggers re-render.
         // The old onReceive($latest) duplicated that update → removed.
-        .sheet(isPresented: $showAppDelete) {
-            UninstallPanel()
-        }
     }
 
     // MARK: Sections
@@ -160,7 +154,7 @@ struct MenuBarView: View {
         HStack(spacing: 8) {
             Button("정크 정리") { openWindow(id: "junk") }
             Button("중복 파일") { openWindow(id: "duplicates") }
-            Button("앱 삭제") { showAppDelete = true }
+            Button("앱 삭제") { openWindow(id: "uninstall") }
             Spacer()
             Button("종료") { NSApplication.shared.terminate(nil) }
                 .foregroundStyle(.secondary)

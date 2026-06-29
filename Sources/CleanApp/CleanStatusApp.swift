@@ -22,5 +22,10 @@ struct CleanStatusApp: App {
             DuplicatePanel()
         }
         .windowResizability(.contentSize)
+
+        Window("Uninstall App", id: "uninstall") {
+            UninstallPanel()
+        }
+        .windowResizability(.contentSize)
     }
 }
