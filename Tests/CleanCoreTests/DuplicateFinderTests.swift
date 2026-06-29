@@ -86,10 +86,28 @@ struct DuplicateFinderTests {
     }
 
     // MARK: - 1d: APFS clone → .cloneSuspected, no auto-selected
-    // If clonefile(2) is unsupported on the temp volume this test passes trivially
-    // (non-APFS / HFS+ environment). Verified manually on APFS developer machines.
+    // Enabled only when the temp volume supports clonefile(2) (i.e. APFS).
+    // On non-APFS volumes the test is explicitly disabled (shown as skipped in output)
+    // rather than silently returning — satisfying the reviewer's visibility requirement.
 
-    @Test func apfsCloneIsReportedAsCloneSuspected() throws {
+    /// Returns true when NSTemporaryDirectory resides on an APFS volume that supports
+    /// clonefile(2). Evaluated once via a trial clone that is immediately cleaned up.
+    static var apfsVolumeAvailable: Bool {
+        let tmp = URL(fileURLWithPath: NSTemporaryDirectory())
+        let src = tmp.appendingPathComponent("dup-clone-probe-\(UUID().uuidString)")
+        let dst = tmp.appendingPathComponent("dup-clone-probe-dst-\(UUID().uuidString)")
+        guard (try? Data("x".utf8).write(to: src)) != nil else { return false }
+        defer {
+            try? FileManager.default.removeItem(at: src)
+            try? FileManager.default.removeItem(at: dst)
+        }
+        return src.path.withCString { s in
+            dst.path.withCString { d in clonefile(s, d, 0) == 0 }
+        }
+    }
+
+    @Test(.enabled(if: DuplicateFinderTests.apfsVolumeAvailable))
+    func apfsCloneIsReportedAsCloneSuspected() throws {
         let base = try makeBase()
         defer { try? fm.removeItem(at: base) }
         let dir = try makeDir("clone", in: base)
@@ -97,14 +115,9 @@ struct DuplicateFinderTests {
         try Data("clone content payload for the apfs clone test".utf8).write(to: src)
         let dst = dir.appendingPathComponent("clone.bin")
 
-        // clonefile(2): flags == 0. Guard-skips silently if the temp volume is not
-        // APFS or cannot clone — documented as a manual check in the task report.
         let rc = src.path.withCString { s in dst.path.withCString { d in clonefile(s, d, 0) } }
         guard rc == 0 else {
-            // clonefile not available on this volume — skipping clone assertion.
-            // Error: \(String(cString: strerror(errno)))
-            // Manual verification required: two APFS clones must yield .cloneSuspected
-            // with NO auto-selected items and evidence != nil.
+            Issue.record("clonefile failed unexpectedly on an APFS-capable volume: \(String(cString: strerror(errno)))")
             return
         }
 
