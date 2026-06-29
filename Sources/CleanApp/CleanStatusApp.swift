@@ -12,5 +12,10 @@ struct CleanStatusApp: App {
             MenuBarLabel(memoryMonitor: memoryMonitor)
         }
         .menuBarExtraStyle(.window)
+
+        Window("Junk Cleanup", id: "junk") {
+            JunkPanel()
+        }
+        .windowResizability(.contentSize)
     }
 }
