@@ -1,5 +1,4 @@
 import SwiftUI
-import AppKit
 import CleanCore
 
 // MARK: - ViewModel
@@ -14,6 +13,8 @@ final class JunkPanelModel: ObservableObject {
 
     private let home: URL
     private var scanTask: Task<Void, Never>?
+    private var innerScanTask: Task<[ScanItem], Error>?
+    private var trashTask: Task<Void, Never>?
 
     init(home: URL = FileManager.default.homeDirectoryForCurrentUser) {
         self.home = home
@@ -29,30 +30,35 @@ final class JunkPanelModel: ObservableObject {
     }
 
     func startScan() {
+        innerScanTask?.cancel()
         scanTask?.cancel()
+        innerScanTask = nil
+        scanTask = nil
         outcome = nil
         errorMessage = nil
         isScanning = true
         let home = self.home
+        let inner = Task.detached(priority: .userInitiated) {
+            () throws -> [ScanItem] in
+            let probe = DefaultStatProbe()
+            let coreScanner = CleanCore.Scanner(ignore: .default, probe: probe)
+            // Capture snapshot of running apps before going off-main
+            let isRunning: RunningCheck = await MainActor.run {
+                RunningApps.shared.snapshotCheck()
+            }
+            let junk = JunkScanner(
+                roots: JunkScanner.defaultRoots(home: home),
+                scanner: coreScanner,
+                isRunning: isRunning
+            )
+            return try junk.scan()
+        }
+        innerScanTask = inner
         scanTask = Task { [weak self] in
             do {
-                let result = try await Task.detached(priority: .userInitiated) {
-                    () throws -> [ScanItem] in
-                    let probe = DefaultStatProbe()
-                    let coreScanner = CleanCore.Scanner(ignore: .default, probe: probe)
-                    // Capture snapshot of running apps before going off-main
-                    let isRunning: RunningCheck = await MainActor.run {
-                        RunningApps.shared.snapshotCheck()
-                    }
-                    let junk = JunkScanner(
-                        roots: JunkScanner.defaultRoots(home: home),
-                        scanner: coreScanner,
-                        isRunning: isRunning
-                    )
-                    return try junk.scan()
-                }.value
-                guard !Task.isCancelled else { return }
+                let result = try await inner.value
                 guard let self else { return }
+                self.innerScanTask = nil
                 self.items = result
                 self.selectedIDs = Set(result.filter { $0.isAutoSelected }.map { $0.id })
                 self.isScanning = false
@@ -67,21 +73,26 @@ final class JunkPanelModel: ObservableObject {
     }
 
     func cancelScan() {
+        innerScanTask?.cancel()
         scanTask?.cancel()
+        trashTask?.cancel()
+        innerScanTask = nil
         scanTask = nil
+        trashTask = nil
         isScanning = false
     }
 
     func trashSelected() {
         let selected = selectedItems
         guard !selected.isEmpty else { return }
-        Task { [weak self] in
+        trashTask = Task { [weak self] in
             let result = await Task.detached(priority: .userInitiated) {
                 () -> TrashOutcome in
                 let remover = SafeRemover(probe: DefaultStatProbe(), fileManager: FileManager.default)
                 return remover.trash(selected)
             }.value
             guard let self else { return }
+            self.trashTask = nil
             self.outcome = result
             let trashedSet = Set(result.trashed)
             self.items.removeAll { trashedSet.contains($0.url) }
@@ -95,16 +106,6 @@ final class JunkPanelModel: ObservableObject {
 
 struct JunkPanel: View {
     @StateObject private var model = JunkPanelModel()
-
-    private static let byteFormatter: ByteCountFormatter = {
-        let f = ByteCountFormatter()
-        f.countStyle = .file
-        return f
-    }()
-
-    private func fmt(_ bytes: Int64) -> String {
-        Self.byteFormatter.string(fromByteCount: bytes)
-    }
 
     private var grouped: [(kind: ItemKind, items: [ScanItem])] {
         Dictionary(grouping: model.items, by: { $0.kind })
@@ -192,7 +193,7 @@ struct JunkPanel: View {
                     }
                 }
                 Spacer()
-                Text(fmt(item.allocatedSize)).foregroundStyle(.secondary)
+                Text(humanReadableBytes(item.allocatedSize)).foregroundStyle(.secondary)
             }
         }
         .toggleStyle(.checkbox)
@@ -201,7 +202,7 @@ struct JunkPanel: View {
     private var footerRow: some View {
         HStack {
             let summary = model.summary
-            Text("\(summary.count) selected · \(fmt(summary.allocatedBytes)) reclaimable")
+            Text("\(summary.count) selected · \(humanReadableBytes(summary.allocatedBytes)) reclaimable")
                 .font(.subheadline)
             Spacer()
             if let outcome = model.outcome {
@@ -209,7 +210,7 @@ struct JunkPanel: View {
                     "Trashed \(outcome.trashed.count) · " +
                     "skipped \(outcome.skipped.count) · " +
                     "failed \(outcome.failed.count) · " +
-                    "freed \(fmt(outcome.reclaimedAllocated))"
+                    "freed \(humanReadableBytes(outcome.reclaimedAllocated))"
                 )
                 .font(.caption)
                 .foregroundStyle(.secondary)
