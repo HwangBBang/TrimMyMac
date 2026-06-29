@@ -17,5 +17,10 @@ struct CleanStatusApp: App {
             JunkPanel()
         }
         .windowResizability(.contentSize)
+
+        Window("Duplicate Finder", id: "duplicates") {
+            DuplicatePanel()
+        }
+        .windowResizability(.contentSize)
     }
 }

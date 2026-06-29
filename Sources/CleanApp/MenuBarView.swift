@@ -74,8 +74,7 @@ struct MenuBarView: View {
     // openWindow environment action for opening named windows.
     @Environment(\.openWindow) private var openWindow
 
-    // Placeholder panel toggles (later tasks replace the sheet bodies).
-    @State private var showDuplicates = false   // 중복
+    // Placeholder panel toggle for 앱 삭제 (later task).
     @State private var showAppDelete = false    // 앱 삭제
 
     private let disk = DiskMetrics()
@@ -98,9 +97,6 @@ struct MenuBarView: View {
         // memoryMonitor is @ObservedObject: any @Published change (including $latest
         // from sample() or the pressure callback) automatically triggers re-render.
         // The old onReceive($latest) duplicated that update → removed.
-        .sheet(isPresented: $showDuplicates) {
-            PlaceholderPanel(title: "중복 파일", message: "중복 탐지 패널은 이후 작업에서 연결됩니다.")
-        }
         .sheet(isPresented: $showAppDelete) {
             PlaceholderPanel(title: "앱 삭제", message: "앱 제거 패널은 이후 작업에서 연결됩니다.")
         }
@@ -163,7 +159,7 @@ struct MenuBarView: View {
     private var actionButtons: some View {
         HStack(spacing: 8) {
             Button("정크 정리") { openWindow(id: "junk") }
-            Button("중복 파일") { showDuplicates = true }
+            Button("중복 파일") { openWindow(id: "duplicates") }
             Button("앱 삭제") { showAppDelete = true }
             Spacer()
             Button("종료") { NSApplication.shared.terminate(nil) }
