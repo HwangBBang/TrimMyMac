@@ -25,7 +25,7 @@ public func humanReadableBytes(_ bytes: Int64) -> String {
     // Round to one decimal place, then drop trailing ".0".
     let rounded = (value * 10).rounded() / 10
     let sign = negative ? "-" : ""
-    if rounded == rounded.rounded() {
+    if rounded.truncatingRemainder(dividingBy: 1) == 0 {
         return "\(sign)\(Int(rounded)) \(units[unitIndex])"
     } else {
         return "\(sign)" + String(format: "%.1f", rounded) + " \(units[unitIndex])"

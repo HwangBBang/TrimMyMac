@@ -67,7 +67,8 @@ struct MenuBarLabel: View {
 struct MenuBarView: View {
     @ObservedObject var memoryMonitor: MemoryMonitor
 
-    @State private var sample: MemorySample?
+    // Memory is read directly from memoryMonitor.latest (single source of truth).
+    // Disk (not owned by MemoryMonitor) stays in local @State.
     @State private var diskSample: DiskSample?
 
     // Placeholder panel toggles (later tasks replace the sheet bodies).
@@ -92,9 +93,9 @@ struct MenuBarView: View {
         .frame(width: 320)
         .onAppear(perform: refresh)
         .onReceive(tick) { _ in refresh() }
-        .onReceive(memoryMonitor.$latest) { latest in
-            if let latest { sample = latest }
-        }
+        // memoryMonitor is @ObservedObject: any @Published change (including $latest
+        // from sample() or the pressure callback) automatically triggers re-render.
+        // The old onReceive($latest) duplicated that update → removed.
         .sheet(isPresented: $showJunk) {
             PlaceholderPanel(title: "정크 정리", message: "정크 스캔 패널은 이후 작업에서 연결됩니다.")
         }
@@ -112,7 +113,7 @@ struct MenuBarView: View {
         HStack {
             Text("CleanStatus").font(.headline)
             Spacer()
-            if let sample {
+            if let sample = memoryMonitor.latest {
                 pressurePill(sample.pressure)
             }
         }
@@ -132,7 +133,7 @@ struct MenuBarView: View {
     private var memoryInfoCard: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("메모리").font(.subheadline).bold()
-            if let sample {
+            if let sample = memoryMonitor.latest {
                 infoRow("사용량", "\(humanReadableBytes(sample.used)) / \(humanReadableBytes(sample.total))  (\(memoryUsagePercent(used: sample.used, total: sample.total))%)")
                 ProgressView(value: Double(sample.used), total: Double(max(sample.total, 1)))
                 infoRow("활성", humanReadableBytes(sample.active))
@@ -183,7 +184,8 @@ struct MenuBarView: View {
     // MARK: Refresh
 
     private func refresh() {
-        sample = memoryMonitor.sample()
+        // Drive $latest (single source for memory); view re-renders via @ObservedObject.
+        _ = memoryMonitor.sample()
         diskSample = disk.sample(volume: URL(fileURLWithPath: "/"))
     }
 }

@@ -37,6 +37,30 @@ struct FormattingTests {
         #expect(humanReadableBytes(oneAndHalfGB) == "1.5 GB")
     }
 
+    // MARK: - Negative inputs
+
+    @Test func negativeBytesBelowOneKilobyte() {
+        // magnitude 1 < 1024 → raw byte path, prepend "-"
+        #expect(humanReadableBytes(Int64(-1)) == "-1 B")
+    }
+
+    @Test func negativeKilobytes() {
+        // -1536 → magnitude 1536, 1536/1024 = 1.5 → "-1.5 KB"
+        #expect(humanReadableBytes(Int64(-1536)) == "-1.5 KB")
+    }
+
+    // MARK: - KB→MB boundary
+
+    @Test func justBelowOneMegabyte() {
+        // 1 048 575 B → 1023.999… KB, rounds (at 1 decimal) to 1024.0 KB → "1024 KB"
+        #expect(humanReadableBytes(Int64(1024 * 1024 - 1)) == "1024 KB")
+    }
+
+    @Test func exactlyOneMegabyte() {
+        // 1 048 576 B → loops twice (÷1024 → KB, ÷1024 → MB) → "1 MB"
+        #expect(humanReadableBytes(Int64(1024 * 1024)) == "1 MB")
+    }
+
     // MARK: - humanReadableBytes (UInt64)
 
     @Test func unsignedOverloadMatchesSigned() {
