@@ -32,10 +32,12 @@ struct DefaultStatProbeTests {
             guard let ptr else { return -1 }
             return lstat(ptr, &st)
         }
-        #expect(rc == 0, "direct lstat must succeed")
+        try #require(rc == 0, "direct lstat must succeed")
         #expect(snap.size == Int64(st.st_size))
         #expect(snap.fileID == UInt64(st.st_ino))
         #expect(snap.deviceID == Int32(st.st_dev))
+        let expectedMtime = TimeInterval(st.st_mtimespec.tv_sec) + TimeInterval(st.st_mtimespec.tv_nsec) / 1_000_000_000
+        #expect(snap.mtime == expectedMtime)
 
         // Clean up temp dir after this test
         try? FileManager.default.removeItem(at: dir)
@@ -49,7 +51,7 @@ struct DefaultStatProbeTests {
     }
 
     // 1c: StatSnapshot Equatable — equal fields compare equal, any differing field compares unequal.
-    @Test func statSnapshotEquatable() {
+    @Test func statSnapshotEquatable() throws {
         let a = StatSnapshot(size: 10, mtime: 100, fileID: 7, deviceID: 3)
         let b = StatSnapshot(size: 10, mtime: 100, fileID: 7, deviceID: 3)
         #expect(a == b)
@@ -58,5 +60,6 @@ struct DefaultStatProbeTests {
         #expect(a != StatSnapshot(size: 10, mtime: 101, fileID: 7, deviceID: 3))
         #expect(a != StatSnapshot(size: 10, mtime: 100, fileID: 8, deviceID: 3))
         #expect(a != StatSnapshot(size: 10, mtime: 100, fileID: 7, deviceID: 4))
+        try? FileManager.default.removeItem(at: dir)
     }
 }
