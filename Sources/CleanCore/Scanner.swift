@@ -24,9 +24,9 @@ public struct FileEntry: Sendable {
 
 public struct Scanner {
     private let ignore: IgnoreRules
-    private let probe: StatProbing
+    private let probe: any StatProbing
 
-    public init(ignore: IgnoreRules, probe: StatProbing) {
+    public init(ignore: IgnoreRules, probe: any StatProbing) {
         self.ignore = ignore
         self.probe = probe
     }

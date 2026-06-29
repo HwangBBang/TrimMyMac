@@ -290,6 +290,7 @@ struct DuplicatePanel: View {
         openPanel.allowsMultipleSelection = false
         openPanel.prompt = "Scan"
         openPanel.message = "Choose a folder to scan for duplicates"
+        openPanel.directoryURL = FileManager.default.homeDirectoryForCurrentUser
         guard openPanel.runModal() == .OK, let root = openPanel.url else { return }
         model.startScan(root: root)
     }

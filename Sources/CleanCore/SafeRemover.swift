@@ -63,6 +63,7 @@ public struct SafeRemover: @unchecked Sendable {
             let unchanged = current.size == item.snapshot.size
                 && current.mtime == item.snapshot.mtime
                 && current.fileID == item.snapshot.fileID
+                && current.deviceID == item.snapshot.deviceID
             guard unchanged else {
                 skipped.append(SkippedItem(url: item.url, reason: "changed since scan"))
                 continue

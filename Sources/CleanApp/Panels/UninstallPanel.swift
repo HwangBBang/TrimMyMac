@@ -32,6 +32,7 @@ final class UninstallPanelModel: ObservableObject {
     private var lastAppURL: URL?
     private var planTask: Task<Void, Never>?
     private var innerPlanTask: Task<UninstallPlan, Error>?
+    private var trashTask: Task<Void, Never>?
 
     let home: URL
 
@@ -104,9 +105,19 @@ final class UninstallPanelModel: ObservableObject {
     func trashSelected(plan: UninstallPlan) {
         let all = [plan.app] + plan.leftovers
         let chosen = all.filter { selection.contains($0.id) }
-        let remover = SafeRemover(probe: DefaultStatProbe(), fileManager: .default)
-        let outcome = remover.trash(chosen)
-        phase = .done(plan, outcome)
+
+        let inner = Task.detached(priority: .userInitiated) {
+            () -> TrashOutcome in
+            let remover = SafeRemover(probe: DefaultStatProbe(), fileManager: .default)
+            return remover.trash(chosen)
+        }
+
+        trashTask = Task { [weak self] in
+            let outcome = await inner.value
+            guard let self else { return }
+            self.trashTask = nil
+            self.phase = .done(plan, outcome)
+        }
     }
 
     // MARK: Reset

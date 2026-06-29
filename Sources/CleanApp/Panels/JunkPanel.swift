@@ -7,9 +7,22 @@ import CleanCore
 final class JunkPanelModel: ObservableObject {
     @Published var items: [ScanItem] = []
     @Published var selectedIDs: Set<UUID> = []
-    @Published var isScanning: Bool = false
+    @Published var phase: Phase = .idle
     @Published var outcome: TrashOutcome?
     @Published var errorMessage: String?
+
+    enum Phase: Equatable {
+        case idle
+        case scanning
+        case results
+        case failed(String)
+    }
+
+    // Derived from phase so a cancelled task can never write a stale false and freeze the UI.
+    var isScanning: Bool {
+        if case .scanning = phase { return true }
+        return false
+    }
 
     private let home: URL
     private var scanTask: Task<Void, Never>?
@@ -36,7 +49,7 @@ final class JunkPanelModel: ObservableObject {
         scanTask = nil
         outcome = nil
         errorMessage = nil
-        isScanning = true
+        phase = .scanning    // isScanning derives true from here
         let home = self.home
         let inner = Task.detached(priority: .userInitiated) {
             () throws -> [ScanItem] in
@@ -61,13 +74,13 @@ final class JunkPanelModel: ObservableObject {
                 self.innerScanTask = nil
                 self.items = result
                 self.selectedIDs = Set(result.filter { $0.isAutoSelected }.map { $0.id })
-                self.isScanning = false
+                self.phase = .results    // isScanning derives false from here
             } catch is CancellationError {
-                self?.isScanning = false
+                // phase is already transitioned by cancelScan(); nothing to do here.
             } catch {
                 guard let self else { return }
                 self.errorMessage = error.localizedDescription
-                self.isScanning = false
+                self.phase = .failed(error.localizedDescription)    // isScanning derives false
             }
         }
     }
@@ -79,7 +92,7 @@ final class JunkPanelModel: ObservableObject {
         innerScanTask = nil
         scanTask = nil
         trashTask = nil
-        isScanning = false
+        phase = .idle    // isScanning derives false from here
     }
 
     func trashSelected() {
