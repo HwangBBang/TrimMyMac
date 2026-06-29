@@ -8,7 +8,6 @@ import CleanCore
 final class DuplicatePanelModel: ObservableObject {
     @Published var groups: [DuplicateGroup] = []
     @Published var selectedIDs: Set<UUID> = []      // ScanItem.id values chosen for trash
-    @Published var isScanning: Bool = false
     @Published var phase: Phase = .idle
     @Published var outcome: TrashOutcome?
     @Published var errorMessage: String?
@@ -20,9 +19,16 @@ final class DuplicatePanelModel: ObservableObject {
         case failed(String)
     }
 
+    // Derived from phase so a cancelled task can never write a stale false and freeze the UI.
+    var isScanning: Bool {
+        if case .scanning = phase { return true }
+        return false
+    }
+
     private var scanTask: Task<Void, Never>?
     private var innerScanTask: Task<[DuplicateGroup], Error>?
     private var trashTask: Task<Void, Never>?
+    private var innerTrashTask: Task<TrashOutcome, Never>?
 
     var selectedItems: [ScanItem] {
         groups.flatMap { $0.items }.filter { selectedIDs.contains($0.id) }
@@ -37,8 +43,7 @@ final class DuplicatePanelModel: ObservableObject {
         errorMessage = nil
         groups = []
         selectedIDs = []
-        phase = .scanning(root)
-        isScanning = true
+        phase = .scanning(root)    // isScanning derives true from here
 
         let inner = Task.detached(priority: .userInitiated) {
             () throws -> [DuplicateGroup] in
@@ -55,15 +60,13 @@ final class DuplicatePanelModel: ObservableObject {
                 self.innerScanTask = nil
                 self.groups = found
                 self.selectedIDs = Set(autoSelectedItems(groups: found).map { $0.id })
-                self.phase = .results(root)
-                self.isScanning = false
+                self.phase = .results(root)    // isScanning derives false from here
             } catch is CancellationError {
-                self?.isScanning = false
+                // phase is already transitioned by cancelScan(); nothing to do here.
             } catch {
                 guard let self else { return }
                 self.errorMessage = error.localizedDescription
-                self.phase = .failed(error.localizedDescription)
-                self.isScanning = false
+                self.phase = .failed(error.localizedDescription)    // isScanning derives false
             }
         }
     }
@@ -71,25 +74,30 @@ final class DuplicatePanelModel: ObservableObject {
     func cancelScan() {
         innerScanTask?.cancel()
         scanTask?.cancel()
+        innerTrashTask?.cancel()
         trashTask?.cancel()
         innerScanTask = nil
         scanTask = nil
+        innerTrashTask = nil
         trashTask = nil
-        isScanning = false
-        phase = .idle
+        phase = .idle    // isScanning derives false from here
     }
 
     func trashSelected() {
         let items = selectedItems
         guard !items.isEmpty else { return }
 
+        let inner = Task.detached(priority: .userInitiated) {
+            () -> TrashOutcome in
+            let remover = SafeRemover(probe: DefaultStatProbe(), fileManager: FileManager.default)
+            return remover.trash(items)
+        }
+        innerTrashTask = inner
+
         trashTask = Task { [weak self] in
-            let result = await Task.detached(priority: .userInitiated) {
-                () -> TrashOutcome in
-                let remover = SafeRemover(probe: DefaultStatProbe(), fileManager: FileManager.default)
-                return remover.trash(items)
-            }.value
+            let result = await inner.value
             guard let self else { return }
+            self.innerTrashTask = nil
             self.trashTask = nil
             self.outcome = result
             let trashedSet = Set(result.trashed)
