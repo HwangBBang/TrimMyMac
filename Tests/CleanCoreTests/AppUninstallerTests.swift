@@ -130,6 +130,64 @@ struct AppUninstallerTests {
         }
     }
 
+    // MARK: - Safety: group-container component-boundary match
+
+    @Test func groupContainerSubstringFalsePositiveExcluded() throws {
+        // com.acme.foobar in Group Containers must NOT be reported for com.acme.foo.
+        // The old contains() check would produce a false positive; the component-boundary
+        // check (hasPrefix(bundleID + ".") / hasPrefix(bundleID + "-")) must reject it.
+        let base = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+            .appendingPathComponent("AppUninstallerTests-GC-\(UUID().uuidString)", isDirectory: true)
+        let home = base.appendingPathComponent("home", isDirectory: true)
+        let fm = FileManager.default
+        defer { try? fm.removeItem(at: base) }
+
+        // Minimal Foo.app
+        let fooApp = base.appendingPathComponent("Foo.app", isDirectory: true)
+        let contents = fooApp.appendingPathComponent("Contents", isDirectory: true)
+        try fm.createDirectory(at: contents, withIntermediateDirectories: true)
+        let plistXML = """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+        <plist version="1.0"><dict>
+            <key>CFBundleIdentifier</key><string>com.acme.foo</string>
+        </dict></plist>
+        """
+        try plistXML.write(to: contents.appendingPathComponent("Info.plist"), atomically: true, encoding: .utf8)
+
+        // Group Containers directory with a SIBLING bundleID name (false-positive candidate)
+        let groupContainers = home
+            .appendingPathComponent("Library", isDirectory: true)
+            .appendingPathComponent("Group Containers", isDirectory: true)
+        let sibling = groupContainers.appendingPathComponent("com.acme.foobar", isDirectory: true)
+        try fm.createDirectory(at: sibling, withIntermediateDirectories: true)
+        // Also add a legitimate group-container entry (exact match) to confirm it IS included
+        let exact = groupContainers.appendingPathComponent("com.acme.foo", isDirectory: true)
+        try fm.createDirectory(at: exact, withIntermediateDirectories: true)
+        // And one with a dot-suffix (should also be included as ambiguous)
+        let dotSuffix = groupContainers.appendingPathComponent("com.acme.foo.shared", isDirectory: true)
+        try fm.createDirectory(at: dotSuffix, withIntermediateDirectories: true)
+
+        let scanner = CleanCore.Scanner(ignore: .default, probe: DefaultStatProbe())
+        let uninstaller = AppUninstaller(scanner: scanner, home: home)
+        let plan = try uninstaller.plan(for: fooApp)
+
+        let names = plan.leftovers.map(\.url.lastPathComponent)
+
+        // com.acme.foobar is a different app — must NOT appear in leftovers
+        #expect(
+            !names.contains("com.acme.foobar"),
+            "com.acme.foobar must NOT be reported as a leftover of com.acme.foo (component-boundary safety)"
+        )
+        // Exact and dot-suffix group containers belong to com.acme.foo — must appear (ambiguous)
+        #expect(names.contains("com.acme.foo"), "exact group-container must be included")
+        #expect(names.contains("com.acme.foo.shared"), "dot-suffix group-container must be included")
+        for leftover in plan.leftovers where leftover.url.lastPathComponent.hasPrefix("com.acme.foo") {
+            #expect(leftover.isAutoSelected == false, "group-container entries are always ambiguous")
+            #expect(leftover.evidence != nil, "group-container entries must carry evidence")
+        }
+    }
+
     // MARK: - Safety: bundleID prefix boundary
 
     @Test func prefixMatchIsNotAutoSelected() throws {

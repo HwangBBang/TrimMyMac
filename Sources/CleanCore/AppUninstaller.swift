@@ -24,7 +24,7 @@ public struct UninstallPlan: Sendable {
 public enum UninstallError: Error, Sendable {
     case infoPlistNotFound(URL)
     case missingBundleID(URL)
-    case appBundleUnreadable(URL)
+    case appBundleSnapshotFailed(URL)
 }
 
 // MARK: - AppUninstaller
@@ -47,7 +47,7 @@ public struct AppUninstaller {
         let displayName = appURL.deletingPathExtension().lastPathComponent
 
         guard let appItem = makeItem(url: appURL, kind: .appBundle, isAutoSelected: true, evidence: nil) else {
-            throw UninstallError.appBundleUnreadable(appURL)
+            throw UninstallError.appBundleSnapshotFailed(appURL)
         }
 
         var leftovers: [ScanItem] = []
@@ -93,8 +93,11 @@ public struct AppUninstaller {
         isGroupContainer: Bool
     ) -> (isAutoSelected: Bool, evidence: String?)? {
         if isGroupContainer {
-            // Group containers are shared; only flag when the bundleID appears in the name.
-            if name == bundleID || name.contains(bundleID) {
+            // Group containers are shared; only flag when the name exactly matches the bundleID
+            // or starts with bundleID followed by a component boundary ("." or "-").
+            // Using contains() would be a substring match: "com.acme.foo" would wrongly match
+            // "com.acme.foobar". Component-boundary check prevents that false positive.
+            if name == bundleID || name.hasPrefix(bundleID + ".") || name.hasPrefix(bundleID + "-") {
                 return (false, "shared group container '\(name)' — may be used by multiple apps")
             }
             return nil
@@ -133,7 +136,15 @@ public struct AppUninstaller {
         evidence: String?
     ) -> ScanItem? {
         guard let snapshot = probe.snapshot(of: url) else { return nil }
-        let sizes = (try? scanner.aggregateSize(url)) ?? (logical: 0, allocated: 0)
+        let sizes: (logical: Int64, allocated: Int64)
+        var finalEvidence = evidence
+        do {
+            sizes = try scanner.aggregateSize(url)
+        } catch {
+            sizes = (logical: 0, allocated: 0)
+            let sizeNote = "size unavailable (scan error)"
+            finalEvidence = finalEvidence.map { $0 + "; " + sizeNote } ?? sizeNote
+        }
         return ScanItem(
             id: UUID(),
             url: url,
@@ -142,7 +153,7 @@ public struct AppUninstaller {
             kind: kind,
             snapshot: snapshot,
             isAutoSelected: isAutoSelected,
-            evidence: evidence
+            evidence: finalEvidence
         )
     }
 
@@ -177,7 +188,7 @@ public struct AppUninstaller {
 
     // MARK: - Info.plist parsing
 
-    static func readBundleID(_ appURL: URL) throws -> String {
+    private static func readBundleID(_ appURL: URL) throws -> String {
         let plistURL = appURL
             .appendingPathComponent("Contents", isDirectory: true)
             .appendingPathComponent("Info.plist")
