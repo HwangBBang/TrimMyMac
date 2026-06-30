@@ -30,8 +30,8 @@ TrimMyMac sits in your menu bar as the squeegee glyph next to `MEM x% · SSD y%`
 Every destructive path goes through `SafeRemover` and is covered by tests. The six invariants:
 
 1. **Trash-only** — items are moved to Trash (`NSWorkspace.recycle`), never `removeItem`. Nothing is unrecoverable.
-2. **Home-scoped** — scans and removals are confined to your `~` home directory.
-3. **TOCTOU guard** — every item is re-`stat`'d immediately before trashing; if it changed since the scan, it's skipped.
+2. **You-chosen targets, no blanket sweep** — junk scanning is confined to `~`; the duplicate finder scans the folder *you* pick; the uninstaller trashes the `.app` *you* select plus its `~/Library` leftovers (so it reaches `/Applications` by design). There is no whole-disk sweep — every target is one you chose, and the scan never follows symlinks out of the chosen root.
+3. **TOCTOU guard** — each selected item is re-`stat`'d at its own path immediately before trashing (identity/size/mtime/device); if that drifted since the scan, it's skipped. This guards the item itself, not a deep content-diff of a directory tree.
 4. **Hard-link & clone safety** — hard links are excluded; APFS clones are never auto-selected.
 5. **Exact-match uninstall** — only exact bundle-ID leftovers are auto-selected; anything ambiguous is left for you to decide.
 6. **Memory is read-only** — no purging, no swapping, no "speed up your Mac" tricks.
@@ -40,7 +40,7 @@ Every destructive path goes through `SafeRemover` and is covered by tests. The s
 
 - **macOS 26 (Tahoe)** on **Apple Silicon**
 - **Swift 6** toolchain — works with **Command Line Tools only** (full Xcode not required)
-- Some scans need **Full Disk Access** (granted via System Settings → Privacy & Security)
+- Some scans need **Full Disk Access** (granted via System Settings → Privacy & Security). If a scan can't read a location, the app flags it instead of silently under-reporting.
 
 ## Build & install
 
@@ -71,7 +71,7 @@ silently skips them — use the wrapper, which adds the required framework searc
 ./scripts/test.sh
 ```
 
-**78 tests** across 15 suites cover the safety invariants and core logic.
+**106 tests** across 16 suites cover the safety invariants and core logic.
 
 ## Architecture
 

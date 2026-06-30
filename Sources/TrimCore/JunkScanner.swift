@@ -18,13 +18,16 @@ public struct JunkScanner {
     private let isRunning: RunningCheck
     private let probe: any StatProbing
     private let fileManager: FileManager
+    private let diagnostics: ScanDiagnostics?
 
-    public init(roots: [JunkRoot], scanner: Scanner, isRunning: @escaping RunningCheck) {
+    public init(roots: [JunkRoot], scanner: Scanner, isRunning: @escaping RunningCheck,
+                diagnostics: ScanDiagnostics? = nil) {
         self.roots = roots
         self.scanner = scanner
         self.isRunning = isRunning
         self.probe = DefaultStatProbe()
         self.fileManager = FileManager.default
+        self.diagnostics = diagnostics
     }
 
     public static func defaultRoots(home: URL) -> [JunkRoot] {
@@ -65,10 +68,16 @@ public struct JunkScanner {
     // MARK: - Internals
 
     private func scanPerBundle(_ root: JunkRoot) throws -> [ScanItem] {
-        let entries = (try? fileManager.contentsOfDirectory(
-            at: root.url,
-            includingPropertiesForKeys: [.isDirectoryKey],
-            options: [])) ?? []
+        let entries: [URL]
+        do {
+            entries = try fileManager.contentsOfDirectory(
+                at: root.url,
+                includingPropertiesForKeys: [.isDirectoryKey],
+                options: [])
+        } catch {
+            if isPermissionError(error) { diagnostics?.recordUnreadable(root.url) }
+            return []
+        }
         var items: [ScanItem] = []
         for entry in entries {
             guard isDirectory(entry) else { continue }

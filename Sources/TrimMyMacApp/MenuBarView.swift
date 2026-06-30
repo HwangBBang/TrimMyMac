@@ -28,38 +28,97 @@ private extension MemoryPressure {
 /// popover window is closed.
 struct MenuBarLabel: View {
     @ObservedObject var memoryMonitor: MemoryMonitor
+    @ObservedObject var cpuMonitor: CPUMonitor
+    @ObservedObject var agentMonitor: AgentSessionMonitor
 
-    @State private var sample: MemorySample?
+    @AppStorage("menubar.showCPU") private var showCPU = true
+    @AppStorage("menubar.showMEM") private var showMEM = true
+    @AppStorage("menubar.showSSD") private var showSSD = true
+    @AppStorage("agents.enabled") private var agentsEnabled = true
+
+    @State private var memSample: MemorySample?
     @State private var diskSample: DiskSample?
+    @State private var agentTick = 0
 
     private let disk = DiskMetrics()
-    private let tick = Timer.publish(every: 3, on: .main, in: .common).autoconnect()
+    // 1 s cadence matches Stats' default; a 3 s delta read noticeably lower/laggier CPU.
+    private let tick = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
     var body: some View {
-        HStack(spacing: 4) {
-            Image(nsImage: MenuBarIcon.image(size: 16)).renderingMode(.template)
-            if let sample {
-                let memPct = memoryUsagePercent(used: sample.used, total: sample.total)
-                let ssdPct = diskSample.map { diskUsedPercent(total: $0.total, available: $0.availableImportant) } ?? 0
-                Text("MEM \(memPct)% · SSD \(ssdPct)%")
+        // The status item shows a single pre-rasterized image. A live SwiftUI
+        // HStack/VStack label gets squeezed to ~one character by the menu bar's
+        // tight height/width budget; rendering the metrics to an NSImage (the
+        // approach Stats uses) sizes exactly to content and never truncates.
+        // Rendered inline so metric on/off toggles take effect immediately.
+        Group {
+            if let image = renderLabel() {
+                Image(nsImage: image)
             } else {
-                Text("—")
+                Text("TrimMyMac").font(.system(size: 11))
             }
         }
         .onAppear {
             refresh()
-            memoryMonitor.start { _ in
-                refresh()
-            }
+            memoryMonitor.start { _ in refresh() }
         }
         .onDisappear { memoryMonitor.stop() }
         .onReceive(tick) { _ in refresh() }
     }
 
+    /// Stats-style stacked metric: small dimmed label on top, larger percentage below.
+    /// Sizes are pushed to the practical ceiling for a two-line menu-bar item (~22pt tall).
+    private func metric(_ label: String, _ percent: Int) -> some View {
+        VStack(spacing: 0) {
+            Text(label)
+                .font(.system(size: 8, weight: .semibold))
+                .opacity(0.6)
+            Text("\(percent)%")
+                .font(.system(size: 12, weight: .bold))
+                .monospacedDigit()
+        }
+    }
+
+    /// Rasterizes the enabled stacked metrics into a template NSImage. `isTemplate`
+    /// makes the menu bar tint it for light/dark automatically, and a single image
+    /// is never clipped the way a live multi-line label is. Returns nil when no
+    /// metric is enabled (the body then shows a text fallback so the item stays clickable).
+    @MainActor
+    private func renderLabel() -> NSImage? {
+        var items: [(String, Int)] = []
+        if showCPU { items.append(("CPU", cpuMonitor.latest?.usage ?? 0)) }
+        if showMEM { items.append(("MEM", memSample.map { memoryUsagePercent(used: $0.used, total: $0.total) } ?? 0)) }
+        if showSSD { items.append(("SSD", diskSample.map { diskUsedPercent(total: $0.total, available: $0.availableImportant) } ?? 0)) }
+        guard !items.isEmpty else { return nil }
+
+        let content = HStack(spacing: 8) {
+            ForEach(items, id: \.0) { item in
+                metric(item.0, item.1)
+            }
+        }
+        .padding(.horizontal, 2)
+        .foregroundStyle(.black)   // alpha mask → menu bar tint via isTemplate
+
+        let renderer = ImageRenderer(content: content)
+        renderer.scale = NSScreen.main?.backingScaleFactor ?? 2
+        guard let image = renderer.nsImage else { return nil }
+        image.isTemplate = true
+        return image
+    }
+
     private func refresh() {
-        let s = memoryMonitor.sample()
-        sample = s
+        memSample = memoryMonitor.sample()
         diskSample = disk.sample(volume: URL(fileURLWithPath: "/"))
+        // CPU is delta-based and MUST be sampled from exactly one place; the
+        // always-present menu-bar label owns that cadence. The popover only reads.
+        cpuMonitor.sample()
+
+        // Agent enumeration is heavier than a couple of syscalls, so throttle it to
+        // ~every 3rd tick (~3 s) and only when the feature is on. The popover reads
+        // agentMonitor.sessions; it never samples (delta-based → single sampler).
+        agentTick &+= 1
+        if agentsEnabled, agentTick % 3 == 1 {
+            agentMonitor.sample(enabled: Set(AgentKind.allCases))
+        }
     }
 }
 
@@ -67,6 +126,15 @@ struct MenuBarLabel: View {
 
 struct MenuBarView: View {
     @ObservedObject var memoryMonitor: MemoryMonitor
+    @ObservedObject var cpuMonitor: CPUMonitor
+    @ObservedObject var agentMonitor: AgentSessionMonitor
+
+    @AppStorage("menubar.showCPU") private var showCPU = true
+    @AppStorage("menubar.showMEM") private var showMEM = true
+    @AppStorage("menubar.showSSD") private var showSSD = true
+    @AppStorage("agents.enabled") private var agentsEnabled = true
+
+    @ObservedObject var updater: UpdaterModel
 
     // Memory is read directly from memoryMonitor.latest (single source of truth).
     // Disk (not owned by MemoryMonitor) stays in local @State.
@@ -82,11 +150,21 @@ struct MenuBarView: View {
         VStack(alignment: .leading, spacing: 12) {
             header
             Divider()
+            cpuRow
+            Divider()
             memoryInfoCard
             Divider()
             diskRow
+            if agentsEnabled {
+                Divider()
+                agentSection
+            }
             Divider()
             actionButtons
+            Divider()
+            settingsSection
+            Divider()
+            updateRow
         }
         .padding(16)
         .frame(width: 320)
@@ -119,6 +197,22 @@ struct MenuBarView: View {
         .background(pressure.pillColor.opacity(0.15), in: Capsule())
     }
 
+    /// CPU usage card. Read-only: the menu-bar label owns CPU sampling (delta-based);
+    /// here we only display the latest value it produced.
+    private var cpuRow: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("CPU").font(.subheadline).bold()
+            if let cpu = cpuMonitor.latest {
+                infoRow("사용률", "\(cpu.usage)%")
+                ProgressView(value: Double(cpu.usage), total: 100)
+                infoRow("시스템", "\(cpu.system)%")
+                infoRow("사용자", "\(cpu.user)%")
+            } else {
+                Text("측정 중…").foregroundStyle(.secondary)
+            }
+        }
+    }
+
     /// Read-only memory info card — NO purge button (decision 2).
     private var memoryInfoCard: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -149,6 +243,70 @@ struct MenuBarView: View {
                 Text("측정 중…").foregroundStyle(.secondary)
             }
         }
+    }
+
+    /// Per-session CPU/RAM for detected agentic AI CLIs (Claude Code, Codex).
+    /// Read-only: the menu-bar label owns sampling.
+    private var agentSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("AI 세션").font(.subheadline).bold()
+            if agentMonitor.sessions.isEmpty {
+                Text("감지된 세션 없음").font(.callout).foregroundStyle(.secondary)
+            } else {
+                // A ScrollView collapses to ~0 height inside this content-sized popover,
+                // so render a bounded top-N list (already sorted by CPU then memory).
+                let shown = Array(agentMonitor.sessions.prefix(8))
+                ForEach(shown) { session in
+                    HStack(spacing: 8) {
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(session.kind.displayName).font(.callout)
+                            Text("PID \(session.pid)").font(.caption2).foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Text("CPU \(session.cpu)%").font(.callout).monospacedDigit()
+                        Text(humanReadableBytes(session.memory))
+                            .font(.callout).monospacedDigit()
+                            .frame(width: 76, alignment: .trailing)
+                    }
+                }
+                if agentMonitor.sessions.count > shown.count {
+                    Text("+ \(agentMonitor.sessions.count - shown.count)개 더")
+                        .font(.caption2).foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+
+    /// Collapsible settings: which metrics appear in the menu bar + agent tracking.
+    private var settingsSection: some View {
+        DisclosureGroup("설정") {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("메뉴바 표시").font(.caption).foregroundStyle(.secondary)
+                Toggle("CPU", isOn: $showCPU)
+                Toggle("메모리", isOn: $showMEM)
+                Toggle("디스크", isOn: $showSSD)
+                Divider()
+                Toggle("AI 세션 추적", isOn: $agentsEnabled)
+            }
+            .toggleStyle(.switch)
+            .padding(.top, 4)
+        }
+        .font(.subheadline)
+    }
+
+    /// App version + manual update check (Sparkle). Background checks run on a schedule.
+    private var updateRow: some View {
+        HStack {
+            Text("v\(appVersion)").font(.caption).foregroundStyle(.secondary)
+            Spacer()
+            Button("업데이트 확인") { updater.checkForUpdates() }
+                .controlSize(.small)
+                .disabled(!updater.canCheckForUpdates)
+        }
+    }
+
+    private var appVersion: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?"
     }
 
     private var actionButtons: some View {

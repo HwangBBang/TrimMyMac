@@ -25,10 +25,12 @@ public struct FileEntry: Sendable {
 public struct Scanner {
     private let ignore: IgnoreRules
     private let probe: any StatProbing
+    private let diagnostics: ScanDiagnostics?
 
-    public init(ignore: IgnoreRules, probe: any StatProbing) {
+    public init(ignore: IgnoreRules, probe: any StatProbing, diagnostics: ScanDiagnostics? = nil) {
         self.ignore = ignore
         self.probe = probe
+        self.diagnostics = diagnostics
     }
 
     private static let childKeys: Set<URLResourceKey> = [
@@ -97,7 +99,10 @@ public struct Scanner {
                 options: []
             )
         } catch {
-            return // permission denied or unreadable; skip silently
+            // Record permission/TCC denials so the UI can surface them; other errors
+            // (e.g. a directory that vanished mid-scan) are skipped without noise.
+            if isPermissionError(error) { diagnostics?.recordUnreadable(dir) }
+            return
         }
 
         for child in children {
@@ -106,14 +111,21 @@ public struct Scanner {
 
             let values = try? child.resourceValues(forKeys: Self.childKeys)
 
+            // Never follow symlinks — file OR directory. This keeps the walk inside
+            // the chosen root: a symlinked directory must not pull in files whose real
+            // path is outside the root. (On current macOS `isDirectory` already reports
+            // false for a symlink-to-dir, so this is also an explicit guarantee that
+            // doesn't rely on that platform detail.)
+            if values?.isSymbolicLink == true { continue }
+
             if values?.isDirectory == true {
                 // Recurse; the visited set prevents infinite loops through symlinked dirs.
                 try walk(child, into: &results, visited: &visited)
                 continue
             }
 
-            // Emit only regular files; skip symlinks and special files.
-            guard values?.isRegularFile == true, values?.isSymbolicLink != true else { continue }
+            // Emit only regular files; skip special files.
+            guard values?.isRegularFile == true else { continue }
 
             if let entry = fileEntry(for: child, values: values) {
                 results.append(entry)

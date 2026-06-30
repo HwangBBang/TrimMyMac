@@ -33,11 +33,13 @@ public struct AppUninstaller {
     private let scanner: Scanner
     private let home: URL
     private let probe: any StatProbing
+    private let diagnostics: ScanDiagnostics?
 
-    public init(scanner: Scanner, home: URL) {
+    public init(scanner: Scanner, home: URL, diagnostics: ScanDiagnostics? = nil) {
         self.scanner = scanner
         self.home = home
         self.probe = DefaultStatProbe()
+        self.diagnostics = diagnostics
     }
 
     /// Reads the CFBundleIdentifier from Info.plist, scans standard ~/Library
@@ -54,11 +56,18 @@ public struct AppUninstaller {
         let fm = FileManager.default
 
         for searchDir in Self.searchDirs(home: home) {
-            guard let entries = try? fm.contentsOfDirectory(
-                at: searchDir.url,
-                includingPropertiesForKeys: nil,
-                options: []
-            ) else { continue }
+            let entries: [URL]
+            do {
+                entries = try fm.contentsOfDirectory(
+                    at: searchDir.url,
+                    includingPropertiesForKeys: nil,
+                    options: []
+                )
+            } catch {
+                // A non-existent ~/Library subdir is normal; only flag permission denials.
+                if isPermissionError(error) { diagnostics?.recordUnreadable(searchDir.url) }
+                continue
+            }
 
             for entry in entries {
                 let name = entry.lastPathComponent

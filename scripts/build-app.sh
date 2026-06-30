@@ -84,6 +84,21 @@ else
     echo "WARNING: ${ICON_SRC} not found; app will have no Finder icon." >&2
 fi
 
+# Embed Sparkle.framework (auto-updater). Sparkle ships pre-signed by the Sparkle
+# project, so we copy it in with ditto (preserves symlinks + signature) and do NOT
+# re-sign it; the app is signed WITHOUT --deep below, leaving Sparkle intact.
+echo "==> embedding Sparkle.framework"
+FRAMEWORKS_DIR="${CONTENTS}/Frameworks"
+mkdir -p "${FRAMEWORKS_DIR}"
+SPARKLE_FW="$(swift build -c release --show-bin-path)/Sparkle.framework"
+if [[ -d "${SPARKLE_FW}" ]]; then
+    ditto "${SPARKLE_FW}" "${FRAMEWORKS_DIR}/Sparkle.framework"
+    echo "    -> ${FRAMEWORKS_DIR}/Sparkle.framework"
+else
+    echo "ERROR: Sparkle.framework not found at ${SPARKLE_FW}" >&2
+    exit 1
+fi
+
 # --- 3. Sign ---
 if [[ "${ADHOC_FALLBACK}" == "true" ]]; then
     echo "==> codesign ad-hoc (SPIKE FALLBACK — not stable for TCC/FDA)"
@@ -107,10 +122,14 @@ echo "---- Designated Requirement (must stay constant across rebuilds) ----"
 codesign -d --requirements - "${APP_BUNDLE}" 2>&1 || true
 echo "--------------------------------------------------------------------"
 
-# --- 4. Install to /Applications ---
-echo "==> installing to ${INSTALL_DIR}/${APP_NAME}.app"
-rm -rf "${INSTALL_DIR}/${APP_NAME}.app"
-cp -R "${APP_BUNDLE}" "${INSTALL_DIR}/${APP_NAME}.app"
+# --- 4. Install to /Applications (skipped in CI / release packaging) ---
+if [[ -n "${SKIP_INSTALL:-}" ]]; then
+    echo "==> SKIP_INSTALL set — built bundle at ${APP_BUNDLE} (v${SHORT_VERSION} build ${BUILD_VERSION})"
+else
+    echo "==> installing to ${INSTALL_DIR}/${APP_NAME}.app"
+    rm -rf "${INSTALL_DIR}/${APP_NAME}.app"
+    cp -R "${APP_BUNDLE}" "${INSTALL_DIR}/${APP_NAME}.app"
 
-echo "==> done: ${INSTALL_DIR}/${APP_NAME}.app (v${SHORT_VERSION} build ${BUILD_VERSION})"
-echo "    launch with: open '${INSTALL_DIR}/${APP_NAME}.app'"
+    echo "==> done: ${INSTALL_DIR}/${APP_NAME}.app (v${SHORT_VERSION} build ${BUILD_VERSION})"
+    echo "    launch with: open '${INSTALL_DIR}/${APP_NAME}.app'"
+fi
