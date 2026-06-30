@@ -30,5 +30,14 @@
     <true/>
     <key>NSHumanReadableCopyright</key>
     <string>Personal use.</string>
+    <!-- Sparkle auto-update -->
+    <key>SUFeedURL</key>
+    <string>https://github.com/HwangBBang/TrimMyMac/releases/latest/download/appcast.xml</string>
+    <key>SUPublicEDKey</key>
+    <string>IfK4kif0mKY0v0G298iHsDmOfswV6xyu8KgE3I6tNa8=</string>
+    <key>SUEnableAutomaticChecks</key>
+    <true/>
+    <key>SUScheduledCheckInterval</key>
+    <integer>86400</integer>
 </dict>
 </plist>

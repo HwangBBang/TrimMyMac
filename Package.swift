@@ -12,16 +12,25 @@ let package = Package(
         // toolchain may not yet expose a `.v26` enum case.
         .macOS("26.0")
     ],
+    dependencies: [
+        .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.6.0")
+    ],
     targets: [
         .executableTarget(
             name: "TrimMyMacApp",
-            dependencies: ["TrimCore"],
+            dependencies: [
+                "TrimCore",
+                .product(name: "Sparkle", package: "Sparkle")
+            ],
             swiftSettings: [
                 .swiftLanguageMode(.v6)
             ],
             linkerSettings: [
                 .linkedFramework("AppKit"),
-                .linkedFramework("SwiftUI")
+                .linkedFramework("SwiftUI"),
+                // Embedded Sparkle.framework is resolved at runtime from
+                // Contents/Frameworks (build-app.sh copies it there); SPM links @rpath.
+                .unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks"])
             ]
         ),
         .target(

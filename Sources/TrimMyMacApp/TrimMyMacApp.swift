@@ -6,10 +6,12 @@ struct TrimMyMacApp: App {
     @StateObject private var memoryMonitor = MemoryMonitor()
     @StateObject private var cpuMonitor = CPUMonitor()
     @StateObject private var agentMonitor = AgentSessionMonitor()
+    @StateObject private var updater = UpdaterModel()
 
     var body: some Scene {
         MenuBarExtra {
-            MenuBarView(memoryMonitor: memoryMonitor, cpuMonitor: cpuMonitor, agentMonitor: agentMonitor)
+            MenuBarView(memoryMonitor: memoryMonitor, cpuMonitor: cpuMonitor,
+                        agentMonitor: agentMonitor, updater: updater)
         } label: {
             MenuBarLabel(memoryMonitor: memoryMonitor, cpuMonitor: cpuMonitor, agentMonitor: agentMonitor)
         }

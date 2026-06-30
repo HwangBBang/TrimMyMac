@@ -134,6 +134,8 @@ struct MenuBarView: View {
     @AppStorage("menubar.showSSD") private var showSSD = true
     @AppStorage("agents.enabled") private var agentsEnabled = true
 
+    @ObservedObject var updater: UpdaterModel
+
     // Memory is read directly from memoryMonitor.latest (single source of truth).
     // Disk (not owned by MemoryMonitor) stays in local @State.
     @State private var diskSample: DiskSample?
@@ -161,6 +163,8 @@ struct MenuBarView: View {
             actionButtons
             Divider()
             settingsSection
+            Divider()
+            updateRow
         }
         .padding(16)
         .frame(width: 320)
@@ -287,6 +291,21 @@ struct MenuBarView: View {
             .padding(.top, 4)
         }
         .font(.subheadline)
+    }
+
+    /// App version + manual update check (Sparkle). Background checks run on a schedule.
+    private var updateRow: some View {
+        HStack {
+            Text("v\(appVersion)").font(.caption).foregroundStyle(.secondary)
+            Spacer()
+            Button("업데이트 확인") { updater.checkForUpdates() }
+                .controlSize(.small)
+                .disabled(!updater.canCheckForUpdates)
+        }
+    }
+
+    private var appVersion: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?"
     }
 
     private var actionButtons: some View {
