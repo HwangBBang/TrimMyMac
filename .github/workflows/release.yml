@@ -1,0 +1,55 @@
+name: Release
+
+# Cut a release by pushing a tag like `v0.2.0`:
+#   git tag v0.2.0 && git push origin v0.2.0
+#
+# Requires one repo secret:
+#   SPARKLE_PRIVATE_KEY — the EdDSA private signing key. Export it once with
+#     .build/artifacts/sparkle/Sparkle/bin/generate_keys -x sparkle_key.txt
+#   then paste the file's contents into Settings → Secrets and variables →
+#   Actions → New repository secret. (Public key is already in Info.plist.)
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write   # create the GitHub Release
+
+jobs:
+  release:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Derive version
+        id: ver
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Write Sparkle signing key
+        env:
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+        run: |
+          if [ -z "$SPARKLE_PRIVATE_KEY" ]; then
+            echo "::error::SPARKLE_PRIVATE_KEY secret is not set (generate_keys -x output)."
+            exit 1
+          fi
+          printf '%s' "$SPARKLE_PRIVATE_KEY" > "$RUNNER_TEMP/sparkle_ed_key"
+
+      - name: Build, package, and sign the appcast
+        env:
+          SKIP_INSTALL: "1"
+          SPARKLE_ED_KEY_FILE: ${{ runner.temp }}/sparkle_ed_key
+        # build-app.sh signs ad-hoc on CI (no Developer ID); release.sh zips the
+        # bundle and runs generate_appcast with the EdDSA key from the secret.
+        run: ./scripts/release.sh "${{ steps.ver.outputs.version }}" "${{ github.run_number }}"
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" \
+            --title "TrimMyMac ${GITHUB_REF_NAME}" \
+            --generate-notes \
+            "dist/TrimMyMac-${{ steps.ver.outputs.version }}.zip" \
+            "dist/appcast.xml"

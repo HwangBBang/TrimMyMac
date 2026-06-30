@@ -122,10 +122,14 @@ echo "---- Designated Requirement (must stay constant across rebuilds) ----"
 codesign -d --requirements - "${APP_BUNDLE}" 2>&1 || true
 echo "--------------------------------------------------------------------"
 
-# --- 4. Install to /Applications ---
-echo "==> installing to ${INSTALL_DIR}/${APP_NAME}.app"
-rm -rf "${INSTALL_DIR}/${APP_NAME}.app"
-cp -R "${APP_BUNDLE}" "${INSTALL_DIR}/${APP_NAME}.app"
+# --- 4. Install to /Applications (skipped in CI / release packaging) ---
+if [[ -n "${SKIP_INSTALL:-}" ]]; then
+    echo "==> SKIP_INSTALL set — built bundle at ${APP_BUNDLE} (v${SHORT_VERSION} build ${BUILD_VERSION})"
+else
+    echo "==> installing to ${INSTALL_DIR}/${APP_NAME}.app"
+    rm -rf "${INSTALL_DIR}/${APP_NAME}.app"
+    cp -R "${APP_BUNDLE}" "${INSTALL_DIR}/${APP_NAME}.app"
 
-echo "==> done: ${INSTALL_DIR}/${APP_NAME}.app (v${SHORT_VERSION} build ${BUILD_VERSION})"
-echo "    launch with: open '${INSTALL_DIR}/${APP_NAME}.app'"
+    echo "==> done: ${INSTALL_DIR}/${APP_NAME}.app (v${SHORT_VERSION} build ${BUILD_VERSION})"
+    echo "    launch with: open '${INSTALL_DIR}/${APP_NAME}.app'"
+fi

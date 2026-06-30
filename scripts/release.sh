@@ -32,11 +32,16 @@ ditto -c -k --sequesterRsrc --keepParent "${APP_BUNDLE}" "${ZIP}"
 echo "==> packaged ${ZIP}"
 
 # 3. (Re)generate the EdDSA-signed appcast over everything in dist/.
+#    Locally the private key is read from the login keychain. In CI there is no
+#    keychain, so set SPARKLE_ED_KEY_FILE to a file containing the exported key
+#    (generate_keys -x) — passed through as --ed-key-file.
 GEN="$(find "${ROOT_DIR}/.build/artifacts" -name generate_appcast -type f 2>/dev/null | head -1)"
 [[ -x "${GEN}" ]] || { echo "ERROR: generate_appcast not found — run 'swift build' first." >&2; exit 1; }
-"${GEN}" \
-    --download-url-prefix "https://github.com/${REPO_SLUG}/releases/download/v${VERSION}/" \
-    "${DIST}"
+GEN_ARGS=( --download-url-prefix "https://github.com/${REPO_SLUG}/releases/download/v${VERSION}/" )
+if [[ -n "${SPARKLE_ED_KEY_FILE:-}" ]]; then
+    GEN_ARGS+=( --ed-key-file "${SPARKLE_ED_KEY_FILE}" )
+fi
+"${GEN}" "${GEN_ARGS[@]}" "${DIST}"
 echo "==> appcast: ${DIST}/appcast.xml"
 
 cat <<EOF
