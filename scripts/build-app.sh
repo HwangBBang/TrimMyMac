@@ -60,6 +60,30 @@ sed -e "s/__SHORT_VERSION__/${SHORT_VERSION}/g" \
 # PkgInfo (harmless but conventional).
 printf 'APPL????' > "${CONTENTS}/PkgInfo"
 
+# Resources: render AppIcon.icns from the 1024px source so Finder shows a real
+# icon. Must happen BEFORE codesign so the signature covers Resources/.
+echo "==> generating AppIcon.icns"
+RES_DIR="${CONTENTS}/Resources"
+mkdir -p "${RES_DIR}"
+ICON_SRC="${ROOT_DIR}/assets/AppIcon.png"
+if [[ -f "${ICON_SRC}" ]]; then
+    ICONSET_PARENT="$(mktemp -d)"
+    ICONSET="${ICONSET_PARENT}/AppIcon.iconset"
+    mkdir -p "${ICONSET}"
+    # px:iconset-name pairs for all required @1x/@2x slots.
+    for spec in 16:16x16 32:16x16@2x 32:32x32 64:32x32@2x \
+                128:128x128 256:128x128@2x 256:256x256 512:256x256@2x \
+                512:512x512 1024:512x512@2x; do
+        px="${spec%%:*}"; name="${spec##*:}"
+        sips -z "${px}" "${px}" "${ICON_SRC}" --out "${ICONSET}/icon_${name}.png" >/dev/null
+    done
+    iconutil -c icns "${ICONSET}" -o "${RES_DIR}/AppIcon.icns"
+    rm -rf "${ICONSET_PARENT}"
+    echo "    -> ${RES_DIR}/AppIcon.icns"
+else
+    echo "WARNING: ${ICON_SRC} not found; app will have no Finder icon." >&2
+fi
+
 # --- 3. Sign ---
 if [[ "${ADHOC_FALLBACK}" == "true" ]]; then
     echo "==> codesign ad-hoc (SPIKE FALLBACK — not stable for TCC/FDA)"
