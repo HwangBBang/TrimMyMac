@@ -84,4 +84,35 @@ struct FormattingTests {
     @Test func memoryUsagePercentDivideByZeroReturnsZero() {
         #expect(memoryUsagePercent(used: 10, total: 0) == 0)
     }
+
+    // MARK: - diskUsedPercent
+
+    @Test func diskUsedPercentBasicCase() {
+        // total=100, available=40 → used=60%
+        #expect(diskUsedPercent(total: 100, available: 40) == 60)
+    }
+
+    @Test func diskUsedPercentFullyUsed() {
+        // available=0 → 100% used
+        #expect(diskUsedPercent(total: 100, available: 0) == 100)
+    }
+
+    @Test func diskUsedPercentEmpty() {
+        // available==total → 0% used
+        #expect(diskUsedPercent(total: 100, available: 100) == 0)
+    }
+
+    @Test func diskUsedPercentAvailableExceedsTotalClampsToZero() {
+        // available > total is pathological; clamp → 0% used
+        #expect(diskUsedPercent(total: 100, available: 150) == 0)
+    }
+
+    @Test func diskUsedPercentZeroTotalReturnsZero() {
+        #expect(diskUsedPercent(total: 0, available: 0) == 0)
+    }
+
+    @Test func diskUsedPercentRoundsToNearest() {
+        // total=3, available=1 → used=2/3 ≈ 66.67% → rounds to 67
+        #expect(diskUsedPercent(total: 3, available: 1) == 67)
+    }
 }

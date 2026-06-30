@@ -44,3 +44,12 @@ public func memoryUsagePercent(used: UInt64, total: UInt64) -> Int {
     let fraction = Double(used) / Double(total)
     return Int((fraction * 100).rounded())
 }
+
+/// Disk used% matching the macOS Stats app: (total − available) / total, rounded to nearest integer.
+/// `available` is volumeAvailableCapacityForImportantUsage (includes purgeable — the correct match for Stats).
+/// Returns 0 if total <= 0 or available >= total.
+public func diskUsedPercent(total: Int64, available: Int64) -> Int {
+    guard total > 0 else { return 0 }
+    let clampedAvailable = max(0, min(available, total))
+    return Int((Double(total - clampedAvailable) / Double(total) * 100).rounded())
+}

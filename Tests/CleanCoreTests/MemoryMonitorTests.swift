@@ -28,24 +28,52 @@ struct MemoryMonitorTests {
     // MARK: - page-count-to-bytes math
 
     @Test func pageCountToBytesWithKnownPageSize() {
+        // Formula (matches Stats): active + inactive + speculative + wired + compressed − purgeable − external
+        // active=100, inactive=50, speculative=30, wired=20, compressed=10, purgeable=15, external=5
+        // used pages = 100+50+30+20+10−15−5 = 190
+        let pageSize: UInt64 = 16384
+        let total: UInt64 = 512 * pageSize   // 512 pages total, well above used
         let r = MemoryMonitor.memoryBytes(
             activePages: 100,
             inactivePages: 50,
+            speculativePages: 30,
             wiredPages: 20,
             compressedPages: 10,
-            pageSize: 16384)
-        #expect(r.active == 100 * 16384)
-        #expect(r.inactive == 50 * 16384)
-        #expect(r.wired == 20 * 16384)
-        #expect(r.compressed == 10 * 16384)
-        // "used" follows Activity Monitor convention: active + wired + compressed
-        #expect(r.used == (100 + 20 + 10) * 16384)
+            purgeablePages: 15,
+            externalPages: 5,
+            pageSize: pageSize,
+            total: total)
+        #expect(r.active == 100 * pageSize)
+        #expect(r.inactive == 50 * pageSize)
+        #expect(r.wired == 20 * pageSize)
+        #expect(r.compressed == 10 * pageSize)
+        // used = (100+50+30+20+10−15−5) × pageSize = 190 × 16384
+        #expect(r.used == 190 * pageSize)
     }
 
     @Test func pageCountToBytesZero() {
         let r = MemoryMonitor.memoryBytes(
-            activePages: 0, inactivePages: 0, wiredPages: 0, compressedPages: 0, pageSize: 4096)
+            activePages: 0, inactivePages: 0, speculativePages: 0,
+            wiredPages: 0, compressedPages: 0, purgeablePages: 0,
+            externalPages: 0, pageSize: 4096, total: 0)
         #expect(r.active == 0)
+        #expect(r.used == 0)
+    }
+
+    @Test func pageCountToBytesClampedToZeroOnUnderflow() {
+        // purgeable+external exceed the additive sum → used must clamp to 0, not underflow
+        let pageSize: UInt64 = 4096
+        let total: UInt64 = 1000 * pageSize
+        let r = MemoryMonitor.memoryBytes(
+            activePages: 10,
+            inactivePages: 5,
+            speculativePages: 0,
+            wiredPages: 0,
+            compressedPages: 0,
+            purgeablePages: 100,   // purgeable alone exceeds the sum
+            externalPages: 0,
+            pageSize: pageSize,
+            total: total)
         #expect(r.used == 0)
     }
 

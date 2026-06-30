@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 import CleanCore
 
 // MARK: - Pressure presentation
@@ -22,23 +23,25 @@ private extension MemoryPressure {
 
 // MARK: - Menu-bar label (always visible in the status bar)
 
-/// Compact label shown in the macOS menu bar: "<mem%> · <free disk>".
+/// Compact label shown in the macOS menu bar: "[glyph] MEM x% · SSD y%".
 /// Owns the sampling timer + pressure source so values stay live even when the
 /// popover window is closed.
 struct MenuBarLabel: View {
     @ObservedObject var memoryMonitor: MemoryMonitor
 
     @State private var sample: MemorySample?
-    @State private var freeDisk: Int64 = 0
+    @State private var diskSample: DiskSample?
 
     private let disk = DiskMetrics()
     private let tick = Timer.publish(every: 3, on: .main, in: .common).autoconnect()
 
     var body: some View {
         HStack(spacing: 4) {
-            Image(systemName: "memorychip")
+            Image(nsImage: MenuBarIcon.image(size: 16)).renderingMode(.template)
             if let sample {
-                Text("\(memoryUsagePercent(used: sample.used, total: sample.total))% · \(humanReadableBytes(freeDisk)) free")
+                let memPct = memoryUsagePercent(used: sample.used, total: sample.total)
+                let ssdPct = diskSample.map { diskUsedPercent(total: $0.total, available: $0.availableImportant) } ?? 0
+                Text("MEM \(memPct)% · SSD \(ssdPct)%")
             } else {
                 Text("—")
             }
@@ -56,9 +59,7 @@ struct MenuBarLabel: View {
     private func refresh() {
         let s = memoryMonitor.sample()
         sample = s
-        if let d = disk.sample(volume: URL(fileURLWithPath: "/")) {
-            freeDisk = d.availableImportant
-        }
+        diskSample = disk.sample(volume: URL(fileURLWithPath: "/"))
     }
 }
 

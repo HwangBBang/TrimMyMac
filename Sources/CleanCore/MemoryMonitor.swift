@@ -59,18 +59,26 @@ public final class MemoryMonitor: ObservableObject {
     }
 
     /// Converts raw VM page counts to byte totals for a given page size.
+    /// Formula (matches macOS Stats): used = active + inactive + speculative + wired + compressed − purgeable − external,
+    /// clamped to 0 ... total to guard against pathological cases where purgeable+external exceed the additive sum.
     nonisolated static func memoryBytes(
         activePages: UInt64,
         inactivePages: UInt64,
+        speculativePages: UInt64,
         wiredPages: UInt64,
         compressedPages: UInt64,
-        pageSize: UInt64
+        purgeablePages: UInt64,
+        externalPages: UInt64,
+        pageSize: UInt64,
+        total: UInt64
     ) -> (active: UInt64, inactive: UInt64, wired: UInt64, compressed: UInt64, used: UInt64) {
         let active = activePages * pageSize
         let inactive = inactivePages * pageSize
         let wired = wiredPages * pageSize
         let compressed = compressedPages * pageSize
-        let used = active + wired + compressed
+        let rawUsed = Double(activePages + inactivePages + speculativePages + wiredPages + compressedPages) * Double(pageSize)
+                    - Double(purgeablePages + externalPages) * Double(pageSize)
+        let used = UInt64(max(0, min(rawUsed, Double(total))))
         return (active, inactive, wired, compressed, used)
     }
 
@@ -95,22 +103,26 @@ public final class MemoryMonitor: ObservableObject {
             }
         }
 
+        // Total physical memory (needed by memoryBytes for clamping; read before byte math).
+        var total: UInt64 = 0
+        var totalSize = MemoryLayout<UInt64>.size
+        _ = sysctlbyname("hw.memsize", &total, &totalSize, nil, 0)
+
         let bytes: (active: UInt64, inactive: UInt64, wired: UInt64, compressed: UInt64, used: UInt64)
         if kr == KERN_SUCCESS {
             bytes = Self.memoryBytes(
                 activePages: UInt64(vmStat.active_count),
                 inactivePages: UInt64(vmStat.inactive_count),
+                speculativePages: UInt64(vmStat.speculative_count),
                 wiredPages: UInt64(vmStat.wire_count),
                 compressedPages: UInt64(vmStat.compressor_page_count),
-                pageSize: pageSize)
+                purgeablePages: UInt64(vmStat.purgeable_count),
+                externalPages: UInt64(vmStat.external_page_count),
+                pageSize: pageSize,
+                total: total)
         } else {
             bytes = (0, 0, 0, 0, 0)
         }
-
-        // Total physical memory.
-        var total: UInt64 = 0
-        var totalSize = MemoryLayout<UInt64>.size
-        _ = sysctlbyname("hw.memsize", &total, &totalSize, nil, 0)
 
         // Swap usage.
         var swap = xsw_usage()
