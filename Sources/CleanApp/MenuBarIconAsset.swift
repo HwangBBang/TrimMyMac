@@ -6,7 +6,8 @@ import AppKit
 enum MenuBarIcon {
     /// Template NSImage of the app glyph. `isTemplate = true` → menu-bar tinted.
     static func image(size: CGFloat = 18) -> NSImage {
-        let img = NSImage(data: Data(base64Encoded: base64PNG)!) ?? NSImage()
+        guard let data = Data(base64Encoded: base64PNG, options: .ignoreUnknownCharacters),
+              let img = NSImage(data: data) else { return NSImage() }
         img.isTemplate = true
         img.size = NSSize(width: size, height: size)
         return img
