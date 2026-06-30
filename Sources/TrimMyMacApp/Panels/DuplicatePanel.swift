@@ -11,6 +11,8 @@ final class DuplicatePanelModel: ObservableObject {
     @Published var phase: Phase = .idle
     @Published var outcome: TrashOutcome?
     @Published var errorMessage: String?
+    /// Locations skipped because they couldn't be read (missing Full Disk Access / TCC).
+    @Published var unreadableLocations: [URL] = []
 
     enum Phase: Equatable {
         case idle
@@ -26,7 +28,7 @@ final class DuplicatePanelModel: ObservableObject {
     }
 
     private var scanTask: Task<Void, Never>?
-    private var innerScanTask: Task<[DuplicateGroup], Error>?
+    private var innerScanTask: Task<([DuplicateGroup], [URL]), Error>?
     private var trashTask: Task<Void, Never>?
     private var innerTrashTask: Task<TrashOutcome, Never>?
 
@@ -41,24 +43,28 @@ final class DuplicatePanelModel: ObservableObject {
         scanTask = nil
         outcome = nil
         errorMessage = nil
+        unreadableLocations = []
         groups = []
         selectedIDs = []
         phase = .scanning(root)    // isScanning derives true from here
 
         let inner = Task.detached(priority: .userInitiated) {
-            () throws -> [DuplicateGroup] in
+            () throws -> ([DuplicateGroup], [URL]) in
             let probe = DefaultStatProbe()
-            let scanner = TrimCore.Scanner(ignore: .default, probe: probe)
+            let diag = ScanDiagnostics()
+            let scanner = TrimCore.Scanner(ignore: .default, probe: probe, diagnostics: diag)
             let finder = DuplicateFinder(scanner: scanner, probe: probe)
-            return try finder.find(in: [root])
+            let found = try finder.find(in: [root])
+            return (found, diag.unreadable)
         }
         innerScanTask = inner
         scanTask = Task { [weak self] in
             do {
-                let found = try await inner.value
+                let (found, unreadable) = try await inner.value
                 guard let self else { return }
                 self.innerScanTask = nil
                 self.groups = found
+                self.unreadableLocations = unreadable
                 self.selectedIDs = Set(autoSelectedItems(groups: found).map { $0.id })
                 self.phase = .results(root)    // isScanning derives false from here
             } catch is CancellationError {
@@ -121,6 +127,9 @@ struct DuplicatePanel: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             headerRow
+            if !model.unreadableLocations.isEmpty {
+                permissionBanner
+            }
             Divider()
             contentArea
             Divider()
@@ -134,6 +143,24 @@ struct DuplicatePanel: View {
     }
 
     // MARK: Header
+
+    /// Shown when a scan hit permission-denied locations: results may be incomplete.
+    private var permissionBanner: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+            Text("\(model.unreadableLocations.count)곳을 읽지 못했습니다 — 전체 디스크 접근 권한이 필요할 수 있습니다. 결과가 일부일 수 있어요.")
+                .font(.callout)
+            Spacer()
+            Button("권한 설정 열기") {
+                if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles") {
+                    NSWorkspace.shared.open(url)
+                }
+            }
+            .controlSize(.small)
+        }
+        .padding(8)
+        .background(.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
+    }
 
     private var headerRow: some View {
         HStack {

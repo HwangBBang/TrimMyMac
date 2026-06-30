@@ -28,6 +28,43 @@ struct DuplicateFinderTests {
         return dir
     }
 
+    // MARK: - F5: clone-suspicion decision (pure)
+
+    @Test func cloneAllProbesFailedOnAPFSStaysConservative() {
+        // ALL clone probes failed AND the volume is APFS → could be masking real clones
+        // (e.g. EPERM); must NOT auto-select. Consistent with the partial-fail branch.
+        let r = DuplicateFinder.cloneSuspicion(probeResults: [.indeterminate, .indeterminate], volumeIsAPFS: true)
+        #expect(r.suspected == true)
+        #expect(!r.note.isEmpty)
+    }
+
+    @Test func cloneAllProbesFailedOnNonAPFSAllowsAutoSelect() {
+        // Non-APFS volume → clones are impossible, so plain duplicates may auto-select.
+        let r = DuplicateFinder.cloneSuspicion(probeResults: [.indeterminate, .indeterminate], volumeIsAPFS: false)
+        #expect(r.suspected == false)
+        #expect(r.note.isEmpty)
+    }
+
+    @Test func cloneSomeProbesFailedIsConservative() {
+        let r = DuplicateFinder.cloneSuspicion(probeResults: [.indeterminate, CloneProbeResult.none], volumeIsAPFS: false)
+        #expect(r.suspected == true)
+    }
+
+    @Test func cloneSharedNonZeroIDIsSuspected() {
+        let r = DuplicateFinder.cloneSuspicion(probeResults: [.id(7), .id(7)], volumeIsAPFS: true)
+        #expect(r.suspected == true)
+    }
+
+    @Test func cloneDistinctIDsNotSuspected() {
+        let r = DuplicateFinder.cloneSuspicion(probeResults: [.id(1), .id(2)], volumeIsAPFS: true)
+        #expect(r.suspected == false)
+    }
+
+    @Test func cloneAllResolvedNoIDsNotSuspected() {
+        let r = DuplicateFinder.cloneSuspicion(probeResults: [CloneProbeResult.none, .none], volumeIsAPFS: true)
+        #expect(r.suspected == false)
+    }
+
     // MARK: - 1a: two identical files → one .exact group, exactly one auto-selected
 
     @Test func identicalContentYieldsOneExactGroupWithOneAutoSelected() throws {

@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 import TrimCore
 
 // MARK: - ViewModel
@@ -10,6 +11,8 @@ final class JunkPanelModel: ObservableObject {
     @Published var phase: Phase = .idle
     @Published var outcome: TrashOutcome?
     @Published var errorMessage: String?
+    /// Locations skipped because they couldn't be read (missing Full Disk Access / TCC).
+    @Published var unreadableLocations: [URL] = []
 
     enum Phase: Equatable {
         case idle
@@ -26,7 +29,7 @@ final class JunkPanelModel: ObservableObject {
 
     private let home: URL
     private var scanTask: Task<Void, Never>?
-    private var innerScanTask: Task<[ScanItem], Error>?
+    private var innerScanTask: Task<([ScanItem], [URL]), Error>?
     private var trashTask: Task<Void, Never>?
 
     init(home: URL = FileManager.default.homeDirectoryForCurrentUser) {
@@ -49,12 +52,14 @@ final class JunkPanelModel: ObservableObject {
         scanTask = nil
         outcome = nil
         errorMessage = nil
+        unreadableLocations = []
         phase = .scanning    // isScanning derives true from here
         let home = self.home
         let inner = Task.detached(priority: .userInitiated) {
-            () throws -> [ScanItem] in
+            () throws -> ([ScanItem], [URL]) in
             let probe = DefaultStatProbe()
-            let coreScanner = TrimCore.Scanner(ignore: .default, probe: probe)
+            let diag = ScanDiagnostics()
+            let coreScanner = TrimCore.Scanner(ignore: .default, probe: probe, diagnostics: diag)
             // Capture snapshot of running apps before going off-main
             let isRunning: RunningCheck = await MainActor.run {
                 RunningApps.shared.snapshotCheck()
@@ -62,18 +67,21 @@ final class JunkPanelModel: ObservableObject {
             let junk = JunkScanner(
                 roots: JunkScanner.defaultRoots(home: home),
                 scanner: coreScanner,
-                isRunning: isRunning
+                isRunning: isRunning,
+                diagnostics: diag
             )
-            return try junk.scan()
+            let items = try junk.scan()
+            return (items, diag.unreadable)
         }
         innerScanTask = inner
         scanTask = Task { [weak self] in
             do {
-                let result = try await inner.value
+                let (scanned, unreadable) = try await inner.value
                 guard let self else { return }
                 self.innerScanTask = nil
-                self.items = result
-                self.selectedIDs = Set(result.filter { $0.isAutoSelected }.map { $0.id })
+                self.items = scanned
+                self.unreadableLocations = unreadable
+                self.selectedIDs = Set(scanned.filter { $0.isAutoSelected }.map { $0.id })
                 self.phase = .results    // isScanning derives false from here
             } catch is CancellationError {
                 // phase is already transitioned by cancelScan(); nothing to do here.
@@ -140,6 +148,9 @@ struct JunkPanel: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             headerRow
+            if !model.unreadableLocations.isEmpty {
+                permissionBanner
+            }
             Divider()
             contentArea
             Divider()
@@ -153,6 +164,24 @@ struct JunkPanel: View {
     }
 
     // MARK: Sections
+
+    /// Shown when a scan hit permission-denied locations: results may be incomplete.
+    private var permissionBanner: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+            Text("\(model.unreadableLocations.count)곳을 읽지 못했습니다 — 전체 디스크 접근 권한이 필요할 수 있습니다. 결과가 일부일 수 있어요.")
+                .font(.callout)
+            Spacer()
+            Button("권한 설정 열기") {
+                if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles") {
+                    NSWorkspace.shared.open(url)
+                }
+            }
+            .controlSize(.small)
+        }
+        .padding(8)
+        .background(.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
+    }
 
     private var headerRow: some View {
         HStack {

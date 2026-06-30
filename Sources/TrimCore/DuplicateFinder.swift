@@ -115,37 +115,12 @@ public struct DuplicateFinder {
         //    .none          = getattrlist succeeded; file has no clone id (value zero)
         //    .id(n)         = getattrlist succeeded; file carries non-zero clone id n
         let probeResults = sorted.map { CloneIDProbe.probeClone(of: $0.url) }
-        let indeterminateCount = probeResults.filter {
-            if case .indeterminate = $0 { return true }
-            return false
-        }.count
-
-        let cloneSuspected: Bool
-        let cloneNote: String
-
-        if indeterminateCount == probeResults.count {
-            // ALL getattrlist calls failed → non-APFS volume; clones are impossible.
-            // These are genuine exact duplicates; allow auto-selection.
-            cloneSuspected = false
-            cloneNote = ""
-        } else if indeterminateCount > 0 {
-            // SOME members indeterminate, SOME resolved: cannot safely determine clone
-            // status. Conservative: treat as clone-suspected, auto-select nothing.
-            cloneSuspected = true
-            cloneNote = "APFS clone status indeterminate for some files: clone id could not "
-                + "be read. Auto-selection disabled as a safety measure."
-        } else {
-            // All resolved: check for shared non-zero clone ids.
-            let nonZeroIDs: [UInt64] = probeResults.compactMap {
-                if case .id(let cid) = $0 { return cid }
-                return nil
-            }
-            cloneSuspected = Set(nonZeroIDs).count < nonZeroIDs.count
-            cloneNote = cloneSuspected
-                ? "APFS clone suspected: these files share storage extents (clone id). "
-                    + "Trashing a copy will not immediately reclaim disk space."
-                : ""
-        }
+        // If EVERY probe failed, only treat the files as plain duplicates when the
+        // volume genuinely cannot hold clones (non-APFS). On an APFS volume an
+        // all-failed result (e.g. EPERM on every file) is indistinguishable from real
+        // clones, so we confirm the filesystem before allowing auto-selection.
+        let onAPFS = sorted.contains { Self.volumeIsAPFS($0.url) }
+        let (cloneSuspected, cloneNote) = Self.cloneSuspicion(probeResults: probeResults, volumeIsAPFS: onAPFS)
 
         let confidence: DuplicateConfidence = cloneSuspected ? .cloneSuspected : .exact
 
@@ -167,6 +142,58 @@ public struct DuplicateFinder {
         }
 
         return DuplicateGroup(id: UUID(), confidence: confidence, items: items)
+    }
+
+    // MARK: - Clone suspicion (pure decision + filesystem probe)
+
+    /// Decides whether a group of identical-content files should be treated as APFS
+    /// clones (auto-selection disabled). Probe states:
+    ///  - all `.indeterminate`: every clone probe failed. Auto-select ONLY when the
+    ///    volume is not APFS (clones impossible); on APFS the failure could be masking
+    ///    real clones (e.g. EPERM), so stay conservative — consistent with partial-fail.
+    ///  - some `.indeterminate`: clone status unknown for part of the group → conservative.
+    ///  - all resolved: suspect a clone iff two members share a non-zero clone id.
+    nonisolated static func cloneSuspicion(
+        probeResults: [CloneProbeResult],
+        volumeIsAPFS: Bool
+    ) -> (suspected: Bool, note: String) {
+        let indeterminateCount = probeResults.filter {
+            if case .indeterminate = $0 { return true }
+            return false
+        }.count
+
+        if indeterminateCount == probeResults.count {
+            if volumeIsAPFS {
+                return (true, "APFS clone status could not be determined (probe failed for "
+                    + "every file). Auto-selection disabled as a safety measure.")
+            }
+            // Non-APFS volume → clones are impossible; these are genuine duplicates.
+            return (false, "")
+        } else if indeterminateCount > 0 {
+            return (true, "APFS clone status indeterminate for some files: clone id could not "
+                + "be read. Auto-selection disabled as a safety measure.")
+        } else {
+            let nonZeroIDs: [UInt64] = probeResults.compactMap {
+                if case .id(let cid) = $0 { return cid }
+                return nil
+            }
+            let suspected = Set(nonZeroIDs).count < nonZeroIDs.count
+            return (suspected, suspected
+                ? "APFS clone suspected: these files share storage extents (clone id). "
+                    + "Trashing a copy will not immediately reclaim disk space."
+                : "")
+        }
+    }
+
+    /// True if `url` resides on an APFS volume (statfs `f_fstypename`). On failure,
+    /// assume APFS so the all-indeterminate path stays conservative.
+    nonisolated static func volumeIsAPFS(_ url: URL) -> Bool {
+        var fs = statfs()
+        guard statfs(url.path, &fs) == 0 else { return true }
+        let name = withUnsafeBytes(of: &fs.f_fstypename) { raw -> String in
+            String(cString: raw.bindMemory(to: CChar.self).baseAddress!)
+        }
+        return name.lowercased() == "apfs"
     }
 
     // MARK: - Hashing (file never fully held in memory)
@@ -216,7 +243,7 @@ public struct DuplicateFinder {
 /// Three-state result of an APFS clone-id probe.
 /// Distinguishing failure (indeterminate) from success-with-no-id (none) prevents
 /// a getattrlist failure from masking a clone and allowing auto-selection of the sole copy.
-private enum CloneProbeResult {
+enum CloneProbeResult: Equatable {
     /// getattrlist succeeded; file carries a non-zero APFS clone id.
     case id(UInt64)
     /// getattrlist succeeded; file has no clone id (value is zero or buffer too short).

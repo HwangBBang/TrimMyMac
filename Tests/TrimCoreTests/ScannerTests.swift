@@ -77,6 +77,54 @@ struct ScannerTests {
         #expect(names == ["a.txt", "b.txt"], "loop must not duplicate or hang")
     }
 
+    // MARK: - F2: a symlinked directory pointing OUTSIDE the root must not be followed.
+
+    @Test func symlinkedDirectoryOutsideRootIsNotFollowed() throws {
+        let root = try makeTempRoot()
+        let outside = try makeTempRoot()      // a separate tree, outside `root`
+        defer { removeIfExists(root); removeIfExists(outside) }
+
+        try writeFile(root.appendingPathComponent("inside.txt"), bytes: 5)
+        try writeFile(outside.appendingPathComponent("secret.txt"), bytes: 9)
+
+        // A symlink inside root that resolves to the outside directory.
+        try FileManager.default.createSymbolicLink(
+            at: root.appendingPathComponent("link"),
+            withDestinationURL: outside
+        )
+
+        let names = Set(try makeScanner().enumerate(root).map { $0.url.lastPathComponent })
+        #expect(names == ["inside.txt"])
+        #expect(!names.contains("secret.txt"), "a symlinked dir must not pull files from outside the root")
+    }
+
+    // MARK: - F4: a permission-denied subdirectory is recorded in ScanDiagnostics.
+
+    @Test func permissionDeniedSubdirIsRecorded() throws {
+        let root = try makeTempRoot()
+        let locked = root.appendingPathComponent("locked", isDirectory: true)
+        defer {
+            // restore perms so the dir can be cleaned up
+            try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: locked.path)
+            removeIfExists(root)
+        }
+
+        try writeFile(root.appendingPathComponent("visible.txt"), bytes: 5)
+        try FileManager.default.createDirectory(at: locked, withIntermediateDirectories: true)
+        try writeFile(locked.appendingPathComponent("hidden.txt"), bytes: 9)
+        // chmod 000 → owner cannot list the directory (EACCES on contentsOfDirectory).
+        try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: locked.path)
+
+        let diag = ScanDiagnostics()
+        let scanner = TrimCore.Scanner(ignore: .default, probe: DefaultStatProbe(), diagnostics: diag)
+        let names = Set(try scanner.enumerate(root).map { $0.url.lastPathComponent })
+
+        #expect(names.contains("visible.txt"))
+        #expect(!names.contains("hidden.txt"), "contents of an unreadable dir are not scanned")
+        #expect(diag.hasUnreadable, "the permission-denied dir must be recorded")
+        #expect(diag.unreadable.contains { $0.lastPathComponent == "locked" })
+    }
+
     // MARK: - 1d: aggregateSize logical equals known sum; allocated >= logical.
 
     @Test func aggregateSizeKnownTree() throws {
