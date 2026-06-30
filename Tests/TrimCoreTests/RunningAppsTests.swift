@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import CleanCore
+@testable import TrimCore
 
 @Suite("RunningApps")
 struct RunningAppsTests {

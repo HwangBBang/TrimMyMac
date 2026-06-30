@@ -34,7 +34,7 @@ public struct TrashOutcome: Sendable {
     }
 }
 
-/// The ONLY deletion path in CleanStatus. Re-stats each item immediately before
+/// The ONLY deletion path in TrimMyMac. Re-stats each item immediately before
 /// moving it to the Trash, refusing to touch anything that changed since the scan.
 /// Never calls `FileManager.removeItem` — deletions are recoverable by design.
 public struct SafeRemover: @unchecked Sendable {

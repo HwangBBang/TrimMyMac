@@ -1,5 +1,5 @@
 import Testing
-@testable import CleanCore
+@testable import TrimCore
 
 @Suite("Formatting")
 struct FormattingTests {

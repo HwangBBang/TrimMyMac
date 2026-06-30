@@ -1,5 +1,5 @@
 import SwiftUI
-import CleanCore
+import TrimCore
 
 // MARK: - ViewModel
 
@@ -33,7 +33,7 @@ final class JunkPanelModel: ObservableObject {
         self.home = home
     }
 
-    /// Summary of the currently selected items (pure logic lives in CleanCore).
+    /// Summary of the currently selected items (pure logic lives in TrimCore).
     var summary: SelectionSummary {
         selectionSummary(items: items.filter { selectedIDs.contains($0.id) })
     }
@@ -54,7 +54,7 @@ final class JunkPanelModel: ObservableObject {
         let inner = Task.detached(priority: .userInitiated) {
             () throws -> [ScanItem] in
             let probe = DefaultStatProbe()
-            let coreScanner = CleanCore.Scanner(ignore: .default, probe: probe)
+            let coreScanner = TrimCore.Scanner(ignore: .default, probe: probe)
             // Capture snapshot of running apps before going off-main
             let isRunning: RunningCheck = await MainActor.run {
                 RunningApps.shared.snapshotCheck()

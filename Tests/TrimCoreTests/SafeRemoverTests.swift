@@ -1,6 +1,6 @@
 import Testing
 import Foundation
-@testable import CleanCore
+@testable import TrimCore
 
 /// A StatProbing test double that always returns a fixed (possibly nil) snapshot,
 /// letting us force the "changed since scan" branch deterministically.

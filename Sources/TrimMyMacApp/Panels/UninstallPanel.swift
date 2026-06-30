@@ -1,7 +1,7 @@
 import SwiftUI
 import AppKit
 import UniformTypeIdentifiers
-import CleanCore
+import TrimCore
 
 // MARK: - Phase enum
 
@@ -55,7 +55,7 @@ final class UninstallPanelModel: ObservableObject {
         let homeURL = home
         let inner = Task.detached(priority: .userInitiated) {
             () throws -> UninstallPlan in
-            let scanner = CleanCore.Scanner(ignore: .default, probe: DefaultStatProbe())
+            let scanner = TrimCore.Scanner(ignore: .default, probe: DefaultStatProbe())
             let uninstaller = AppUninstaller(scanner: scanner, home: homeURL)
             return try uninstaller.plan(for: appURL)
         }

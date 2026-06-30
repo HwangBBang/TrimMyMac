@@ -1,7 +1,7 @@
-# CleanStatus — 설계안 (Codex 게이트 + 회의 반영 완료)
+# TrimMyMac — 설계안 (Codex 게이트 + 회의 반영 완료)
 
 > 상태: 브레인스토밍 → Codex(`gpt-5.5 xhigh`) 독립 리뷰 `GATE: BLOCK(MUST 4건)` → 세계최고 개발자 회의(4 페르소나) → **6개 의사결정 확정**. 본 문서는 그 결정을 반영한 최종 설계.
-> 작성일: 2026-06-29 · 리뷰파일: `~/.claude/cx-reviews/cleanstatus-design-20260629-123729.md`
+> 작성일: 2026-06-29 · 리뷰파일: `~/.claude/cx-reviews/trimmymac-design-20260629-123729.md`
 
 ## 0. 한 줄 정의
 
@@ -29,7 +29,7 @@ macOS 메뉴바에 상주하며 **리소스를 모니터링하고, 정크/중복
 | 3 | 코드 서명 / FDA 지속 | **self-signed 고정 인증서**로 서명 — 재빌드 간 cdhash 안정 → FDA 영속 |
 | 4 | 앱 언인스톨러 매칭 | **exact 번들ID만 자동선택** + 근거(plist/receipt) 표시, helper/group/shared는 'ambiguous' 기본해제 |
 | 5 | 중복 파일 처리 | **명백 동일(전체해시 일치)만 자동선택** + **삭제 직전 re-stat 재검증**(TOCTOU 차단), 애매/클론은 해제 |
-| 6 | 아키텍처 투자 | **직접 AppKit 의존(YAGNI)** — `RunningAppProvider` 프로토콜 분리 안 함. CleanCore는 AppKit import 허용 |
+| 6 | 아키텍처 투자 | **직접 AppKit 의존(YAGNI)** — `RunningAppProvider` 프로토콜 분리 안 함. TrimCore는 AppKit import 허용 |
 
 ## 3. v1 범위 (A~F)
 
@@ -54,13 +54,13 @@ macOS 메뉴바에 상주하며 **리소스를 모니터링하고, 정크/중복
 
 ## 4. 아키텍처 — 엔진/UI 2계층
 
-엔진(`CleanCore`)을 **SwiftUI 뷰 없는 로직 라이브러리**로 둔다(시스템 API·AppKit은 직접 사용 — 결정 6). 그 위에 얇은 SwiftUI 앱(`CleanApp`)을 얹는다. 단위 테스트는 파일시스템 로직(중복/정크/메트릭) 중심으로 확보한다.
+엔진(`TrimCore`)을 **SwiftUI 뷰 없는 로직 라이브러리**로 둔다(시스템 API·AppKit은 직접 사용 — 결정 6). 그 위에 얇은 SwiftUI 앱(`TrimMyMacApp`)을 얹는다. 단위 테스트는 파일시스템 로직(중복/정크/메트릭) 중심으로 확보한다.
 
 ```
-clean-status/
-├── Package.swift                      # executable(CleanApp) + library(CleanCore) + test 타깃
+trimmymac/
+├── Package.swift                      # executable(TrimMyMacApp) + library(TrimCore) + test 타깃
 ├── Sources/
-│   ├── CleanCore/                     # 엔진 (SwiftUI 뷰 없음; Foundation/Darwin/AppKit 사용 가능)
+│   ├── TrimCore/                     # 엔진 (SwiftUI 뷰 없음; Foundation/Darwin/AppKit 사용 가능)
 │   │   ├── Metrics/
 │   │   │   ├── MemoryMonitor.swift    # DispatchSource.makeMemoryPressureSource + host_statistics64 + vm.swapusage
 │   │   │   └── DiskMetrics.swift      # URLResourceValues volumeAvailableCapacityForImportantUsage
@@ -77,14 +77,14 @@ clean-status/
 │   │   │   └── SafeRemover.swift      # ★모든 삭제의 유일한 통로 = FileManager.trashItem (+삭제직전 re-stat)
 │   │   └── System/
 │   │       └── RunningApps.swift      # NSRunningApplication/NSWorkspace 직접 사용 (quit-first 판단)
-│   └── CleanApp/                      # SwiftUI 메뉴바 앱 (CleanCore 의존)
-│       ├── CleanStatusApp.swift       # @main, MenuBarExtra(.menuBarExtraStyle(.window))
+│   └── TrimMyMacApp/                      # SwiftUI 메뉴바 앱 (TrimCore 의존)
+│       ├── TrimMyMacApp.swift       # @main, MenuBarExtra(.menuBarExtraStyle(.window))
 │       ├── MenuBarView.swift          # 상시 모니터(메모리/디스크) + 메모리 정보 카드
 │       └── Panels/
 │           ├── JunkPanel.swift
 │           ├── DuplicatePanel.swift
 │           └── UninstallPanel.swift
-├── Tests/CleanCoreTests/             # 엔진 단위 테스트 (임시 디렉토리 픽스처)
+├── Tests/TrimCoreTests/             # 엔진 단위 테스트 (임시 디렉토리 픽스처)
 └── scripts/build-app.sh              # swift build → .app 번들 → self-signed 서명 → /Applications 설치
 ```
 
@@ -94,7 +94,7 @@ clean-status/
 - `JunkScanner` / `DuplicateFinder` / `AppUninstaller`: 각자 **삭제 후보 목록만 산출** — 직접 삭제 안 함. 실행중 여부가 필요한 곳은 기본값 `RunningApps.shared`를 갖는 **주입 가능 클로저**로 테스트 시 대체(프로토콜 모듈은 안 만듦 — 결정 6의 경량 seam).
 - `SafeRemover`: 후보를 **휴지통으로만** 이동(`trashItem`), 이동 직전 **re-stat로 size/mtime/fileID 재확인**. 삭제는 전부 여기로 수렴 = 안전 단일 지점.
 - `RunningApps`: 실행중 앱 감지(AppKit). 캐시/삭제/중복이 공유하는 quit-first 판단.
-- `CleanApp`: 위 엔진을 호출하는 SwiftUI 레이어. 비즈니스 로직 없음.
+- `TrimMyMacApp`: 위 엔진을 호출하는 SwiftUI 레이어. 비즈니스 로직 없음.
 
 ## 5. UI/UX 흐름
 
@@ -121,7 +121,7 @@ clean-status/
 
 ## 7. 빌드 & 실행 (Xcode 불필요)
 
-- `swift build -c release` → `scripts/build-app.sh`가 `CleanStatus.app` 번들 조립:
+- `swift build -c release` → `scripts/build-app.sh`가 `TrimMyMac.app` 번들 조립:
   - `Info.plist`: `LSUIElement=true`(Dock 미표시), `CFBundleIdentifier`(고정), 아이콘, `CFBundleExecutable`.
   - **self-signed 인증서로 서명** (`security`로 1회 생성한 코드서명용 인증서, `codesign -s "<cert>"` — `--deep` 회피). 동일 번들ID+안정 cdhash → **FDA 권한 영속**.
   - `/Applications`에 설치 (안정 경로 → TCC 권한 안정).
@@ -130,7 +130,7 @@ clean-status/
 
 ## 8. 테스트 전략 (TDD)
 
-- `CleanCore` 파일시스템 로직을 임시 디렉토리 픽스처로 단위 테스트:
+- `TrimCore` 파일시스템 로직을 임시 디렉토리 픽스처로 단위 테스트:
   - `DuplicateFinder`: 동일/상이/하드링크/클론 픽스처로 정확도 + 하드링크 제외 + 클론 표시 검증.
   - `JunkScanner`/`IgnoreRules`: 화이트리스트 보호, 실행중 앱 캐시 skip(주입 클로저로).
   - `SafeRemover`: 휴지통 이동 + re-stat skip 동작.

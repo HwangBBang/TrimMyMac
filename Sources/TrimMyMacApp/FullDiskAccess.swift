@@ -2,7 +2,7 @@ import SwiftUI
 import AppKit
 
 /// Cross-cutting Full Disk Access onboarding. Presented as a sheet whenever a scan/uninstall
-/// fails with a permission error (see `FullDiskAccessClassifier` in CleanCore).
+/// fails with a permission error (see `FullDiskAccessClassifier` in TrimCore).
 @MainActor
 struct FullDiskAccessSheet: View {
     let onRetry: () -> Void
@@ -13,13 +13,13 @@ struct FullDiskAccessSheet: View {
             Label("Full Disk Access Required", systemImage: "lock.shield")
                 .font(.headline)
 
-            Text("CleanStatus needs Full Disk Access to scan and clean files under your "
+            Text("TrimMyMac needs Full Disk Access to scan and clean files under your "
                  + "~/Library folder. Grant access in System Settings, then return here and retry.")
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
-            Text("System Settings → Privacy & Security → Full Disk Access → enable CleanStatus.")
+            Text("System Settings → Privacy & Security → Full Disk Access → enable TrimMyMac.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
 

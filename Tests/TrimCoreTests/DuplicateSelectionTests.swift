@@ -1,13 +1,13 @@
 import Testing
 import Foundation
-@testable import CleanCore
+@testable import TrimCore
 
 @Suite("DuplicateSelection")
 struct DuplicateSelectionTests {
 
     // Build a throwaway ScanItem with deterministic fields.
     private func makeItem(_ name: String, size: Int64) -> ScanItem {
-        let url = URL(fileURLWithPath: "/tmp/clean-status-fixtures/\(name)")
+        let url = URL(fileURLWithPath: "/tmp/trimmymac-fixtures/\(name)")
         let snap = StatSnapshot(size: size, mtime: 1_000, fileID: 1, deviceID: 1)
         return ScanItem(
             id: UUID(),

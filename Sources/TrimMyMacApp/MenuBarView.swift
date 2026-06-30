@@ -1,6 +1,6 @@
 import SwiftUI
 import AppKit
-import CleanCore
+import TrimCore
 
 // MARK: - Pressure presentation
 
@@ -101,7 +101,7 @@ struct MenuBarView: View {
 
     private var header: some View {
         HStack {
-            Text("CleanStatus").font(.headline)
+            Text("TrimMyMac").font(.headline)
             Spacer()
             if let sample = memoryMonitor.latest {
                 pressurePill(sample.pressure)

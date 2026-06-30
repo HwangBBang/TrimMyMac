@@ -1,6 +1,6 @@
 import Testing
 import Foundation
-@testable import CleanCore
+@testable import TrimCore
 
 @Suite("JunkScanner")
 struct JunkScannerTests {
@@ -26,8 +26,8 @@ struct JunkScannerTests {
         try Data(count: bytes).write(to: url)
     }
 
-    private func makeScanner() -> CleanCore.Scanner {
-        CleanCore.Scanner(ignore: .default, probe: DefaultStatProbe())
+    private func makeScanner() -> TrimCore.Scanner {
+        TrimCore.Scanner(ignore: .default, probe: DefaultStatProbe())
     }
 
     // MARK: - 1: perBundleSubdirs skips running apps; non-perBundle emits one aggregated item

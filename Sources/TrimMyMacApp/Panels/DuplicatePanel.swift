@@ -1,6 +1,6 @@
 import SwiftUI
 import AppKit
-import CleanCore
+import TrimCore
 
 // MARK: - ViewModel
 
@@ -48,7 +48,7 @@ final class DuplicatePanelModel: ObservableObject {
         let inner = Task.detached(priority: .userInitiated) {
             () throws -> [DuplicateGroup] in
             let probe = DefaultStatProbe()
-            let scanner = CleanCore.Scanner(ignore: .default, probe: probe)
+            let scanner = TrimCore.Scanner(ignore: .default, probe: probe)
             let finder = DuplicateFinder(scanner: scanner, probe: probe)
             return try finder.find(in: [root])
         }

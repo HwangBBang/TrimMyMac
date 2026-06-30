@@ -1,6 +1,6 @@
 import Testing
 import Foundation
-@testable import CleanCore
+@testable import TrimCore
 
 @Suite("DefaultStatProbe")
 struct DefaultStatProbeTests {

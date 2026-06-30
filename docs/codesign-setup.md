@@ -1,6 +1,6 @@
-# CleanStatus code-signing identity (one-time, manual)
+# TrimMyMac code-signing identity (one-time, manual)
 
-CleanStatus is signed with a **named self-signed Code Signing certificate** so
+TrimMyMac is signed with a **named self-signed Code Signing certificate** so
 that the app's Designated Requirement (identifier + leaf cert) stays **stable
 across rebuilds**. This is what lets the Full Disk Access (TCC) grant survive
 `scripts/build-app.sh` runs. Ad-hoc signing (`codesign -s -`) bakes the cdhash
@@ -10,7 +10,7 @@ into the DR, so every rebuild looks like a brand-new app and FDA is lost.
 
 1. Open **Keychain Access**.
 2. Menu: **Keychain Access ▸ Certificate Assistant ▸ Create a Certificate…**
-3. Name: **CleanStatus Self-Signed**
+3. Name: **TrimMyMac Self-Signed**
    Identity Type: **Self Signed Root**
    Certificate Type: **Code Signing**
    (optionally tick "Let me override defaults" to bump validity to e.g. 3650 days)
@@ -22,7 +22,7 @@ into the DR, so every rebuild looks like a brand-new app and FDA is lost.
 ```bash
 security find-identity -v -p codesigning
 # Expect a line like:
-#   1) <40-hex> "CleanStatus Self-Signed"
+#   1) <40-hex> "TrimMyMac Self-Signed"
 ```
 
 ## Avoid repeated keychain-access prompts (optional, once)
@@ -40,10 +40,10 @@ security set-key-partition-list \
 ## How build-app.sh references it
 
 `scripts/build-app.sh` reads the identity name from `$CODESIGN_IDENTITY`
-(default `"CleanStatus Self-Signed"`) and runs:
+(default `"TrimMyMac Self-Signed"`) and runs:
 
 ```
-codesign --force -s "$CODESIGN_IDENTITY" --identifier com.hbh0112.cleanstatus <app>
+codesign --force -s "$CODESIGN_IDENTITY" --identifier com.hbh0112.trimmymac <app>
 ```
 
 Note: **not** `--deep` (it re-signs nested code and is deprecated) and

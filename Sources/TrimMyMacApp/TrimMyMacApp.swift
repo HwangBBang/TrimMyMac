@@ -1,8 +1,8 @@
 import SwiftUI
-import CleanCore
+import TrimCore
 
 @main
-struct CleanStatusApp: App {
+struct TrimMyMacApp: App {
     @StateObject private var memoryMonitor = MemoryMonitor()
 
     var body: some Scene {

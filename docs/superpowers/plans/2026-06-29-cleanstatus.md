@@ -1,16 +1,16 @@
-# CleanStatus Implementation Plan
+# TrimMyMac Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Build a personal macOS menu-bar app that monitors memory/disk and safely cleans junk, duplicate files, and app leftovers — every deletion routed through the Trash (reversible).
 
-**Architecture:** Two-layer Swift Package — a UI-free `CleanCore` engine (metrics, scanning, dedup, uninstall; all deletions funneled through a single `SafeRemover`) and a thin SwiftUI `CleanApp` menu-bar layer (`MenuBarExtra`). Built with Swift Package Manager plus a `build-app.sh` that assembles a **self-signed `.app`** (no Xcode required).
+**Architecture:** Two-layer Swift Package — a UI-free `TrimCore` engine (metrics, scanning, dedup, uninstall; all deletions funneled through a single `SafeRemover`) and a thin SwiftUI `TrimMyMacApp` menu-bar layer (`MenuBarExtra`). Built with Swift Package Manager plus a `build-app.sh` that assembles a **self-signed `.app`** (no Xcode required).
 
 **Tech Stack:** Swift 6 (strict concurrency), SwiftUI `MenuBarExtra`, AppKit (`NSWorkspace`/`NSRunningApplication`), CryptoKit (SHA256), Darwin syscalls (`lstat`, `host_statistics64`, `sysctl`, `getattrlist`), **Swift Testing**. macOS 26 (Tahoe), Apple Silicon.
 
 ## Global Constraints
 
-- Package name `CleanStatus`; targets: `CleanApp` (executable), `CleanCore` (library), `CleanCoreTests` (tests). Swift language mode **v6**. Platform **macOS 26**.
+- Package name `TrimMyMac`; targets: `TrimMyMacApp` (executable), `TrimCore` (library), `TrimCoreTests` (tests). Swift language mode **v6**. Platform **macOS 26**.
 - **SAFETY — deletions:** ONLY via `SafeRemover` using `FileManager.trashItem` — NEVER `removeItem`. Permanent deletion is never performed (no empty-Trash feature in v1).
 - **SAFETY — scope:** home (`~/`) paths only — never touch `/Library` or `/System`.
 - **SAFETY — TOCTOU:** re-stat each item immediately before trashing; skip if its `StatSnapshot` changed since scan.
@@ -26,7 +26,7 @@
 
 ### Task 0: SPM scaffold + build-app.sh (self-signed) + empty MenuBarExtra spike
 
-> **SPIKE — do this FIRST.** It de-risks the riskiest assumption of the whole project: that a SwiftUI `MenuBarExtra` app **builds with SwiftPM (no Xcode)** and **actually shows up in the menu bar** when assembled into a `.app` bundle and launched. It also locks in the **self-signed codesign-by-name** approach so that TCC / Full Disk Access grants survive rebuilds. Verification is **MANUAL** (no XCTest for the spike itself); a trivial `CleanCoreTests` smoke target is created so the package + `swift test` pipeline is wired for every later task.
+> **SPIKE — do this FIRST.** It de-risks the riskiest assumption of the whole project: that a SwiftUI `MenuBarExtra` app **builds with SwiftPM (no Xcode)** and **actually shows up in the menu bar** when assembled into a `.app` bundle and launched. It also locks in the **self-signed codesign-by-name** approach so that TCC / Full Disk Access grants survive rebuilds. Verification is **MANUAL** (no XCTest for the spike itself); a trivial `TrimCoreTests` smoke target is created so the package + `swift test` pipeline is wired for every later task.
 
 **Web-verified facts used here:**
 - `MenuBarExtra("Title", systemImage:) { ... }.menuBarExtraStyle(.window)` is the correct minimal SwiftUI menu-bar scene; **no `NSApplicationDelegateAdaptor` is required** for a plain menu-bar item (Apple `MenuBarExtra` docs; nilcoalescing "Build a macOS menu bar utility in SwiftUI").
@@ -36,16 +36,16 @@
 
 **Files:**
 - Create: `Package.swift`
-- Create: `Sources/CleanApp/CleanStatusApp.swift`
-- Create: `Sources/CleanCore/CleanCore.swift` (empty marker so the library module compiles)
+- Create: `Sources/TrimMyMacApp/TrimMyMacApp.swift`
+- Create: `Sources/TrimCore/TrimCore.swift` (empty marker so the library module compiles)
 - Create: `scripts/build-app.sh`
 - Create: `scripts/Info.plist.template`
 - Create: `docs/codesign-setup.md`
-- Test: `Tests/CleanCoreTests/ScaffoldSmokeTests.swift`
+- Test: `Tests/TrimCoreTests/ScaffoldSmokeTests.swift`
 
 **Interfaces:**
 - Consumes: none (foundational).
-- Produces: the package layout (`CleanStatus` package; `CleanApp` executable target; `CleanCore` library target; `CleanCoreTests` test target; platform macOS 26) and the signed `.app` bundling pipeline that every later task builds on. No public CleanCore signatures from the frozen contract are implemented in this task — `CleanCore` is an empty module here and is filled in by later tasks.
+- Produces: the package layout (`TrimMyMac` package; `TrimMyMacApp` executable target; `TrimCore` library target; `TrimCoreTests` test target; platform macOS 26) and the signed `.app` bundling pipeline that every later task builds on. No public TrimCore signatures from the frozen contract are implemented in this task — `TrimCore` is an empty module here and is filled in by later tasks.
 
 ---
 
@@ -56,7 +56,7 @@
     import PackageDescription
 
     let package = Package(
-        name: "CleanStatus",
+        name: "TrimMyMac",
         platforms: [
             // macOS 26 (Tahoe). The string form is required because the
             // toolchain may not yet expose a `.v26` enum case.
@@ -64,8 +64,8 @@
         ],
         targets: [
             .executableTarget(
-                name: "CleanApp",
-                dependencies: ["CleanCore"],
+                name: "TrimMyMacApp",
+                dependencies: ["TrimCore"],
                 linkerSettings: [
                     .linkedFramework("AppKit"),
                     .linkedFramework("SwiftUI")
@@ -75,14 +75,14 @@
                 ]
             ),
             .target(
-                name: "CleanCore",
+                name: "TrimCore",
                 swiftSettings: [
                     .swiftLanguageMode(.v6)
                 ]
             ),
             .testTarget(
-                name: "CleanCoreTests",
-                dependencies: ["CleanCore"],
+                name: "TrimCoreTests",
+                dependencies: ["TrimCore"],
                 swiftSettings: [
                     .swiftLanguageMode(.v6)
                 ]
@@ -91,13 +91,13 @@
     )
     ```
 
-- [ ] **Step 2: Create the empty `CleanCore` module marker**
+- [ ] **Step 2: Create the empty `TrimCore` module marker**
 
-    `CleanCore` is filled in by later tasks (Models, Scanner, etc.). For the spike it only needs to be a compilable, public-surface-free module so `import CleanCore` works.
+    `TrimCore` is filled in by later tasks (Models, Scanner, etc.). For the spike it only needs to be a compilable, public-surface-free module so `import TrimCore` works.
 
-    File `Sources/CleanCore/CleanCore.swift`:
+    File `Sources/TrimCore/TrimCore.swift`:
     ```swift
-    // CleanCore — shared, UI-free library for CleanStatus.
+    // TrimCore — shared, UI-free library for TrimMyMac.
     // Intentionally empty in Task 0. Public types from the frozen contract
     // (Models, StatProbing, Scanner, SafeRemover, etc.) are added by later tasks.
     // An empty Swift source file compiles to a valid (empty) module.
@@ -105,16 +105,16 @@
 
 - [ ] **Step 3: Create the SwiftUI `MenuBarExtra` app**
 
-    The file is named `CleanStatusApp.swift` (NOT `main.swift`) so the `@main` attribute on the `App` is used as the entry point; a top-level `main.swift` would conflict with `@main`.
+    The file is named `TrimMyMacApp.swift` (NOT `main.swift`) so the `@main` attribute on the `App` is used as the entry point; a top-level `main.swift` would conflict with `@main`.
 
-    File `Sources/CleanApp/CleanStatusApp.swift`:
+    File `Sources/TrimMyMacApp/TrimMyMacApp.swift`:
     ```swift
     import SwiftUI
 
     @main
-    struct CleanStatusApp: App {
+    struct TrimMyMacApp: App {
         var body: some Scene {
-            MenuBarExtra("CleanStatus", systemImage: "sparkles") {
+            MenuBarExtra("TrimMyMac", systemImage: "sparkles") {
                 MenuBarContentView()
             }
             .menuBarExtraStyle(.window)
@@ -124,13 +124,13 @@
     struct MenuBarContentView: View {
         var body: some View {
             VStack(alignment: .leading, spacing: 8) {
-                Text("CleanStatus")
+                Text("TrimMyMac")
                     .font(.headline)
                 Text("Scaffold spike — menu bar item is live.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
                 Divider()
-                Button("Quit CleanStatus") {
+                Button("Quit TrimMyMac") {
                     NSApplication.shared.terminate(nil)
                 }
                 .keyboardShortcut("q")
@@ -154,15 +154,15 @@
         <key>CFBundleDevelopmentRegion</key>
         <string>en</string>
         <key>CFBundleExecutable</key>
-        <string>CleanApp</string>
+        <string>TrimMyMacApp</string>
         <key>CFBundleIdentifier</key>
-        <string>com.hbh0112.cleanstatus</string>
+        <string>com.hbh0112.trimmymac</string>
         <key>CFBundleInfoDictionaryVersion</key>
         <string>6.0</string>
         <key>CFBundleName</key>
-        <string>CleanStatus</string>
+        <string>TrimMyMac</string>
         <key>CFBundleDisplayName</key>
-        <string>CleanStatus</string>
+        <string>TrimMyMac</string>
         <key>CFBundlePackageType</key>
         <string>APPL</string>
         <key>CFBundleShortVersionString</key>
@@ -183,9 +183,9 @@
 
     File `docs/codesign-setup.md`:
     ```markdown
-    # CleanStatus code-signing identity (one-time, manual)
+    # TrimMyMac code-signing identity (one-time, manual)
 
-    CleanStatus is signed with a **named self-signed Code Signing certificate** so
+    TrimMyMac is signed with a **named self-signed Code Signing certificate** so
     that the app's Designated Requirement (identifier + leaf cert) stays **stable
     across rebuilds**. This is what lets the Full Disk Access (TCC) grant survive
     `scripts/build-app.sh` runs. Ad-hoc signing (`codesign -s -`) bakes the cdhash
@@ -195,7 +195,7 @@
 
     1. Open **Keychain Access**.
     2. Menu: **Keychain Access ▸ Certificate Assistant ▸ Create a Certificate…**
-    3. Name: **CleanStatus Self-Signed**
+    3. Name: **TrimMyMac Self-Signed**
        Identity Type: **Self Signed Root**
        Certificate Type: **Code Signing**
        (optionally tick "Let me override defaults" to bump validity to e.g. 3650 days)
@@ -207,7 +207,7 @@
     ```bash
     security find-identity -v -p codesigning
     # Expect a line like:
-    #   1) <40-hex> "CleanStatus Self-Signed"
+    #   1) <40-hex> "TrimMyMac Self-Signed"
     ```
 
     ## Avoid repeated keychain-access prompts (optional, once)
@@ -225,10 +225,10 @@
     ## How build-app.sh references it
 
     `scripts/build-app.sh` reads the identity name from `$CODESIGN_IDENTITY`
-    (default `"CleanStatus Self-Signed"`) and runs:
+    (default `"TrimMyMac Self-Signed"`) and runs:
 
     ```
-    codesign --force -s "$CODESIGN_IDENTITY" --identifier com.hbh0112.cleanstatus <app>
+    codesign --force -s "$CODESIGN_IDENTITY" --identifier com.hbh0112.trimmymac <app>
     ```
 
     Note: **not** `--deep` (it re-signs nested code and is deprecated) and
@@ -240,7 +240,7 @@
     File `scripts/build-app.sh`:
     ```bash
     #!/usr/bin/env bash
-    # Build, bundle, sign (named self-signed identity), and install CleanStatus.app.
+    # Build, bundle, sign (named self-signed identity), and install TrimMyMac.app.
     set -euo pipefail
 
     # --- Resolve repo root (script lives in <root>/scripts) ---
@@ -249,12 +249,12 @@
     cd "${ROOT_DIR}"
 
     # --- Config ---
-    APP_NAME="CleanStatus"
-    EXE_NAME="CleanApp"
-    BUNDLE_ID="com.hbh0112.cleanstatus"
+    APP_NAME="TrimMyMac"
+    EXE_NAME="TrimMyMacApp"
+    BUNDLE_ID="com.hbh0112.trimmymac"
     SHORT_VERSION="${SHORT_VERSION:-0.1.0}"
     BUILD_VERSION="${BUILD_VERSION:-1}"
-    CODESIGN_IDENTITY="${CODESIGN_IDENTITY:-CleanStatus Self-Signed}"
+    CODESIGN_IDENTITY="${CODESIGN_IDENTITY:-TrimMyMac Self-Signed}"
     INSTALL_DIR="/Applications"
 
     BUILD_DIR="${ROOT_DIR}/.build/bundle"
@@ -324,18 +324,18 @@
 
 - [ ] **Step 7: Create the scaffold smoke test (wires up `swift test` for later tasks)**
 
-    > This is the only test file in Task 0 and it is intentionally trivial — its job is to prove the `CleanCoreTests` target compiles, links against `CleanCore`, and that `swift test` runs green. The **real** acceptance for this spike is the MANUAL menu-bar check in Step 9.
+    > This is the only test file in Task 0 and it is intentionally trivial — its job is to prove the `TrimCoreTests` target compiles, links against `TrimCore`, and that `swift test` runs green. The **real** acceptance for this spike is the MANUAL menu-bar check in Step 9.
 
-    File `Tests/CleanCoreTests/ScaffoldSmokeTests.swift`:
+    File `Tests/TrimCoreTests/ScaffoldSmokeTests.swift`:
     ```swift
     import XCTest
-    @testable import CleanCore
+    @testable import TrimCore
 
     final class ScaffoldSmokeTests: XCTestCase {
         // Proves the package compiles and the test pipeline is wired.
-        // CleanCore is an empty module in Task 0; later tasks add real tests.
-        func testCleanCoreModuleImportsAndTestPipelineRuns() {
-            XCTAssertTrue(true, "CleanCore imported and CleanCoreTests target built")
+        // TrimCore is an empty module in Task 0; later tasks add real tests.
+        func testTrimCoreModuleImportsAndTestPipelineRuns() {
+            XCTAssertTrue(true, "TrimCore imported and TrimCoreTests target built")
         }
     }
     ```
@@ -346,45 +346,45 @@
     ```bash
     swift build && swift test --filter ScaffoldSmokeTests
     ```
-    Expected: `swift build` succeeds (both `CleanApp` and `CleanCore` compile); `swift test` reports **1 test passed** for `ScaffoldSmokeTests`. If `swift build` fails on `MenuBarExtra`/`@main`, the SwiftPM-MenuBarExtra assumption is broken — STOP and reassess before any later task.
+    Expected: `swift build` succeeds (both `TrimMyMacApp` and `TrimCore` compile); `swift test` reports **1 test passed** for `ScaffoldSmokeTests`. If `swift build` fails on `MenuBarExtra`/`@main`, the SwiftPM-MenuBarExtra assumption is broken — STOP and reassess before any later task.
 
 - [ ] **Step 9: MANUAL spike verification — bundle, install, and confirm the menu bar item**
 
     Run:
     ```bash
     ./scripts/build-app.sh
-    open /Applications/CleanStatus.app
+    open /Applications/TrimMyMac.app
     ```
     **Exact expected observation:**
-    1. `build-app.sh` prints `==> done: /Applications/CleanStatus.app ...` with no codesign errors, and `codesign --verify --strict` produces **no output / exit 0**.
+    1. `build-app.sh` prints `==> done: /Applications/TrimMyMac.app ...` with no codesign errors, and `codesign --verify --strict` produces **no output / exit 0**.
     2. After `open`, a **`sparkles` (✨) icon appears in the macOS menu bar** (top-right status area). **No Dock icon and no app-switcher entry appear** (because `LSUIElement=true`).
-    3. **Clicking the sparkles icon** opens a small window-style popover showing the heading **"CleanStatus"**, the subtitle **"Scaffold spike — menu bar item is live."**, a divider, and a **"Quit CleanStatus"** button.
-    4. Clicking **Quit CleanStatus** (or ⌘Q) removes the menu-bar icon and terminates the app.
+    3. **Clicking the sparkles icon** opens a small window-style popover showing the heading **"TrimMyMac"**, the subtitle **"Scaffold spike — menu bar item is live."**, a divider, and a **"Quit TrimMyMac"** button.
+    4. Clicking **Quit TrimMyMac** (or ⌘Q) removes the menu-bar icon and terminates the app.
 
     **Codesign-stability spot check** (confirms the TCC-persistence assumption):
     ```bash
-    codesign -d --requirements - /Applications/CleanStatus.app 2>&1   # note the line
+    codesign -d --requirements - /Applications/TrimMyMac.app 2>&1   # note the line
     ./scripts/build-app.sh                                            # rebuild
-    codesign -d --requirements - /Applications/CleanStatus.app 2>&1   # compare
+    codesign -d --requirements - /Applications/TrimMyMac.app 2>&1   # compare
     ```
-    Expected: the **Designated Requirement is identical** across the two builds (it references `identifier "com.hbh0112.cleanstatus"` anchored to the `CleanStatus Self-Signed` cert), even though the cdhash changes. This is the property that keeps Full Disk Access granted after rebuilds. (If the DR instead mentioned the cdhash, signing would have been ad-hoc — fix the identity before continuing.)
+    Expected: the **Designated Requirement is identical** across the two builds (it references `identifier "com.hbh0112.trimmymac"` anchored to the `TrimMyMac Self-Signed` cert), even though the cdhash changes. This is the property that keeps Full Disk Access granted after rebuilds. (If the DR instead mentioned the cdhash, signing would have been ad-hoc — fix the identity before continuing.)
 
 - [ ] **Step 10: Stage (user commits)**
 
     ```bash
     git add Package.swift \
-            Sources/CleanApp/CleanStatusApp.swift \
-            Sources/CleanCore/CleanCore.swift \
+            Sources/TrimMyMacApp/TrimMyMacApp.swift \
+            Sources/TrimCore/TrimCore.swift \
             scripts/build-app.sh \
             scripts/Info.plist.template \
             docs/codesign-setup.md \
-            Tests/CleanCoreTests/ScaffoldSmokeTests.swift
+            Tests/TrimCoreTests/ScaffoldSmokeTests.swift
     # Recommended commit message (USER runs the commit, per policy):
     #   chore(scaffold): SPM package + self-signed build-app.sh + MenuBarExtra spike
     #
-    #   - Package.swift: CleanStatus (CleanApp exe + CleanCore lib + CleanCoreTests), macOS 26, Swift 6
-    #   - CleanStatusApp: @main MenuBarExtra(sparkles, .window) — verified appears in menu bar
-    #   - build-app.sh: swift build -c release -> .app bundle (LSUIElement, com.hbh0112.cleanstatus)
+    #   - Package.swift: TrimMyMac (TrimMyMacApp exe + TrimCore lib + TrimCoreTests), macOS 26, Swift 6
+    #   - TrimMyMacApp: @main MenuBarExtra(sparkles, .window) — verified appears in menu bar
+    #   - build-app.sh: swift build -c release -> .app bundle (LSUIElement, com.hbh0112.trimmymac)
     #     signed by NAMED self-signed identity (--force, no --deep, no ad-hoc) for stable DR / TCC persistence
     #   - docs/codesign-setup.md: one-time Keychain Access identity creation steps
     ```
@@ -392,9 +392,9 @@
 ### Task 1: Models + DefaultStatProbe
 
 **Files:**
-- Create: `Sources/CleanCore/Models.swift`
-- Create: `Sources/CleanCore/StatProbing.swift`
-- Test: `Tests/CleanCoreTests/DefaultStatProbeTests.swift`
+- Create: `Sources/TrimCore/Models.swift`
+- Create: `Sources/TrimCore/StatProbing.swift`
+- Test: `Tests/TrimCoreTests/DefaultStatProbeTests.swift`
 
 **Interfaces:**
 - Consumes: none (foundational task — everything else consumes these types)
@@ -434,7 +434,7 @@
 
     ```swift
     import XCTest
-    @testable import CleanCore
+    @testable import TrimCore
 
     final class DefaultStatProbeTests: XCTestCase {
 
@@ -498,11 +498,11 @@
 
 - [ ] **Step 2: Run test to verify it fails**
     Run: `swift test --filter DefaultStatProbeTests`
-    Expected: FAIL — compile error "cannot find 'DefaultStatProbe' in scope" / "cannot find type 'StatSnapshot' in scope" because `Sources/CleanCore/Models.swift` and `Sources/CleanCore/StatProbing.swift` do not exist yet.
+    Expected: FAIL — compile error "cannot find 'DefaultStatProbe' in scope" / "cannot find type 'StatSnapshot' in scope" because `Sources/TrimCore/Models.swift` and `Sources/TrimCore/StatProbing.swift` do not exist yet.
 
 - [ ] **Step 3: Write minimal implementation**
 
-    `Sources/CleanCore/Models.swift`:
+    `Sources/TrimCore/Models.swift`:
     ```swift
     import Foundation
 
@@ -556,7 +556,7 @@
     }
     ```
 
-    `Sources/CleanCore/StatProbing.swift`:
+    `Sources/TrimCore/StatProbing.swift`:
     ```swift
     import Foundation
 
@@ -595,9 +595,9 @@
 - [ ] **Step 5: Stage (user commits)**
 
     ```bash
-    git add Sources/CleanCore/Models.swift \
-            Sources/CleanCore/StatProbing.swift \
-            Tests/CleanCoreTests/DefaultStatProbeTests.swift
+    git add Sources/TrimCore/Models.swift \
+            Sources/TrimCore/StatProbing.swift \
+            Tests/TrimCoreTests/DefaultStatProbeTests.swift
 
     # Recommended commit message (run yourself):
     # git commit -m "feat(core): add core models and lstat-based DefaultStatProbe
@@ -610,8 +610,8 @@
 ### Task 2: SafeRemover (the only deletion path)
 
 **Files:**
-- Create: `Sources/CleanCore/SafeRemover.swift`
-- Test: `Tests/CleanCoreTests/SafeRemoverTests.swift`
+- Create: `Sources/TrimCore/SafeRemover.swift`
+- Test: `Tests/TrimCoreTests/SafeRemoverTests.swift`
 
 **Interfaces:**
 - Consumes:
@@ -630,7 +630,7 @@
     ```swift
     import XCTest
     import Foundation
-    @testable import CleanCore
+    @testable import TrimCore
 
     final class SafeRemoverTests: XCTestCase {
 
@@ -764,7 +764,7 @@
 
 - [ ] **Step 2: Run test to verify it fails**
     Run: `swift test --filter SafeRemoverTests`
-    Expected: FAIL with a compile error — `cannot find 'SafeRemover' in scope` (and `SkippedItem`/`FailedItem`/`TrashOutcome` unresolved) because `Sources/CleanCore/SafeRemover.swift` does not exist yet.
+    Expected: FAIL with a compile error — `cannot find 'SafeRemover' in scope` (and `SkippedItem`/`FailedItem`/`TrashOutcome` unresolved) because `Sources/TrimCore/SafeRemover.swift` does not exist yet.
 
 - [ ] **Step 3: Write minimal implementation**
     ```swift
@@ -804,7 +804,7 @@
         }
     }
 
-    /// The ONLY deletion path in CleanStatus. Re-stats each item immediately before
+    /// The ONLY deletion path in TrimMyMac. Re-stats each item immediately before
     /// moving it to the Trash, refusing to touch anything that changed since the scan.
     /// Never calls `FileManager.removeItem` — deletions are recoverable by design.
     public struct SafeRemover {
@@ -863,7 +863,7 @@
 
 - [ ] **Step 5: Stage (user commits)**
     ```bash
-    git add Sources/CleanCore/SafeRemover.swift Tests/CleanCoreTests/SafeRemoverTests.swift
+    git add Sources/TrimCore/SafeRemover.swift Tests/TrimCoreTests/SafeRemoverTests.swift
     # Recommended commit message (run yourself):
     # feat(core): add SafeRemover — re-stat-guarded trash-only deletion path
     #
@@ -877,8 +877,8 @@
 ### Task 3: IgnoreRules
 
 **Files:**
-- Create: `Sources/CleanCore/IgnoreRules.swift`
-- Test: `Tests/CleanCoreTests/IgnoreRulesTests.swift`
+- Create: `Sources/TrimCore/IgnoreRules.swift`
+- Test: `Tests/TrimCoreTests/IgnoreRulesTests.swift`
 
 **Interfaces:**
 - Consumes: none (foundational; depends only on Foundation `URL`)
@@ -894,7 +894,7 @@ public struct IgnoreRules: Sendable {
 - [ ] **Step 1: Write the failing test**
     ```swift
     import XCTest
-    @testable import CleanCore
+    @testable import TrimCore
 
     final class IgnoreRulesTests: XCTestCase {
 
@@ -1018,7 +1018,7 @@ public struct IgnoreRules: Sendable {
 
 - [ ] **Step 5: Stage (user commits)**
     ```bash
-    git add Sources/CleanCore/IgnoreRules.swift Tests/CleanCoreTests/IgnoreRulesTests.swift
+    git add Sources/TrimCore/IgnoreRules.swift Tests/TrimCoreTests/IgnoreRulesTests.swift
     # Recommended commit message (USER runs git commit):
     # feat(core): add IgnoreRules with default macOS exclusions + extraGlobs
     #
@@ -1030,8 +1030,8 @@ public struct IgnoreRules: Sendable {
 ### Task 4: Scanner (recursive enumerate + symlink guard + cancellation + aggregateSize)
 
 **Files:**
-- Create: `Sources/CleanCore/Scanner.swift`
-- Test: `Tests/CleanCoreTests/ScannerTests.swift`
+- Create: `Sources/TrimCore/Scanner.swift`
+- Test: `Tests/TrimCoreTests/ScannerTests.swift`
 
 **Interfaces:**
 - Consumes:
@@ -1048,7 +1048,7 @@ public struct IgnoreRules: Sendable {
 
     ```swift
     import XCTest
-    @testable import CleanCore
+    @testable import TrimCore
 
     final class ScannerTests: XCTestCase {
 
@@ -1161,7 +1161,7 @@ public struct IgnoreRules: Sendable {
 
 - [ ] **Step 2: Run test to verify it fails**
     Run: `swift test --filter ScannerTests`
-    Expected: FAIL — compile error "cannot find 'Scanner' in scope" / "cannot find type 'FileEntry' in scope" because `Sources/CleanCore/Scanner.swift` does not exist yet.
+    Expected: FAIL — compile error "cannot find 'Scanner' in scope" / "cannot find type 'FileEntry' in scope" because `Sources/TrimCore/Scanner.swift` does not exist yet.
 
 - [ ] **Step 3: Write minimal implementation**
     Depth-first walk. Each directory is keyed by its real `(deviceID, fileID)` (resolved through symlinks) and recorded in a `visited` set before descending, so any symlink that resolves back to an already-entered directory returns immediately. Only regular files become `FileEntry`s; symlinks and special files are not emitted and ignored paths are pruned at both directory and child level. `Task.isCancelled` is checked at entry and per child.
@@ -1296,7 +1296,7 @@ public struct IgnoreRules: Sendable {
 
 - [ ] **Step 5: Stage (user commits)**
     ```bash
-    git add Sources/CleanCore/Scanner.swift Tests/CleanCoreTests/ScannerTests.swift
+    git add Sources/TrimCore/Scanner.swift Tests/TrimCoreTests/ScannerTests.swift
     # Recommended commit message (run yourself):
     # git commit -m "feat(core): add Scanner with recursive enumerate, symlink-loop guard, cancellation, aggregateSize"
     ```
@@ -1304,8 +1304,8 @@ public struct IgnoreRules: Sendable {
 ### Task 5: MemoryMonitor
 
 **Files:**
-- Create: `Sources/CleanCore/MemoryMonitor.swift`
-- Test: `Tests/CleanCoreTests/MemoryMonitorTests.swift`
+- Create: `Sources/TrimCore/MemoryMonitor.swift`
+- Test: `Tests/TrimCoreTests/MemoryMonitorTests.swift`
 
 **Interfaces:**
 - Consumes: none (foundational; uses only Darwin/Dispatch system APIs)
@@ -1342,7 +1342,7 @@ public struct IgnoreRules: Sendable {
     ```swift
     import XCTest
     import Dispatch
-    @testable import CleanCore
+    @testable import TrimCore
 
     final class MemoryMonitorTests: XCTestCase {
 
@@ -1407,7 +1407,7 @@ public struct IgnoreRules: Sendable {
 
 - [ ] **Step 2: Run test to verify it fails**
     Run: `swift test --filter MemoryMonitorTests`
-    Expected: FAIL — build error "cannot find 'MemoryMonitor' in scope" / "type 'MemoryMonitor' has no member 'pressure'/'memoryBytes'" because `Sources/CleanCore/MemoryMonitor.swift` does not exist yet.
+    Expected: FAIL — build error "cannot find 'MemoryMonitor' in scope" / "type 'MemoryMonitor' has no member 'pressure'/'memoryBytes'" because `Sources/TrimCore/MemoryMonitor.swift` does not exist yet.
 
 - [ ] **Step 3: Write minimal implementation**
     ```swift
@@ -1447,7 +1447,7 @@ public struct IgnoreRules: Sendable {
         private var pressureSource: DispatchSourceMemoryPressure?
         private var onChangeHandler: ((MemoryPressure) -> Void)?
         private var latestPressure: MemoryPressure = .normal
-        private let monitorQueue = DispatchQueue(label: "com.cleanstatus.memorymonitor", qos: .utility)
+        private let monitorQueue = DispatchQueue(label: "com.trimmymac.memorymonitor", qos: .utility)
 
         public init() {}
 
@@ -1573,7 +1573,7 @@ public struct IgnoreRules: Sendable {
 
 - [ ] **Step 5: Stage (user commits)**
     ```bash
-    git add Sources/CleanCore/MemoryMonitor.swift Tests/CleanCoreTests/MemoryMonitorTests.swift
+    git add Sources/TrimCore/MemoryMonitor.swift Tests/TrimCoreTests/MemoryMonitorTests.swift
     # Recommended commit message (run yourself):
     # feat(core): add MemoryMonitor (host_statistics64 + vm.swapusage + DispatchSource pressure)
     #
@@ -1587,8 +1587,8 @@ public struct IgnoreRules: Sendable {
 ### Task 6: DiskMetrics
 
 **Files:**
-- Create: `Sources/CleanCore/DiskMetrics.swift`
-- Test: `Tests/CleanCoreTests/DiskMetricsTests.swift`
+- Create: `Sources/TrimCore/DiskMetrics.swift`
+- Test: `Tests/TrimCoreTests/DiskMetricsTests.swift`
 
 **Interfaces:**
 - Consumes: none (foundational — Foundation `URL.resourceValues(forKeys:)` only)
@@ -1613,7 +1613,7 @@ public struct IgnoreRules: Sendable {
 - [ ] **Step 1: Write the failing test**
     ```swift
     import XCTest
-    @testable import CleanCore
+    @testable import TrimCore
 
     final class DiskMetricsTests: XCTestCase {
 
@@ -1640,7 +1640,7 @@ public struct IgnoreRules: Sendable {
 
 - [ ] **Step 2: Run test to verify it fails**
     Run: `swift test --filter DiskMetricsTests`
-    Expected: FAIL — compile error / unresolved identifier `DiskMetrics` and `DiskSample` (types do not exist yet in `CleanCore`).
+    Expected: FAIL — compile error / unresolved identifier `DiskMetrics` and `DiskSample` (types do not exist yet in `TrimCore`).
 
 - [ ] **Step 3: Write minimal implementation**
     ```swift
@@ -1680,7 +1680,7 @@ public struct IgnoreRules: Sendable {
 
 - [ ] **Step 5: Stage (user commits)**
     ```bash
-    git add Sources/CleanCore/DiskMetrics.swift Tests/CleanCoreTests/DiskMetricsTests.swift
+    git add Sources/TrimCore/DiskMetrics.swift Tests/TrimCoreTests/DiskMetricsTests.swift
     # Recommended commit message (user runs `git commit`):
     #   feat(core): add DiskMetrics volume capacity sampling
     #
@@ -1691,8 +1691,8 @@ public struct IgnoreRules: Sendable {
 ### Task 7: RunningApps
 
 **Files:**
-- Create: `Sources/CleanCore/RunningApps.swift`
-- Test: `Tests/CleanCoreTests/RunningAppsTests.swift`
+- Create: `Sources/TrimCore/RunningApps.swift`
+- Test: `Tests/TrimCoreTests/RunningAppsTests.swift`
 
 **Interfaces:**
 - Consumes: none
@@ -1707,7 +1707,7 @@ public struct IgnoreRules: Sendable {
 - [ ] **Step 1: Write the failing test**
     ```swift
     import XCTest
-    @testable import CleanCore
+    @testable import TrimCore
 
     final class RunningAppsTests: XCTestCase {
 
@@ -1800,7 +1800,7 @@ public struct IgnoreRules: Sendable {
 
 - [ ] **Step 5: Stage (user commits)**
     ```bash
-    git add Sources/CleanCore/RunningApps.swift Tests/CleanCoreTests/RunningAppsTests.swift
+    git add Sources/TrimCore/RunningApps.swift Tests/TrimCoreTests/RunningAppsTests.swift
     # Recommended commit message (run yourself):
     # git commit -m "feat(core): add RunningApps (isRunning/quit) + snapshot RunningCheck"
     ```
@@ -1808,8 +1808,8 @@ public struct IgnoreRules: Sendable {
 ### Task 8: JunkScanner
 
 **Files:**
-- Create: `Sources/CleanCore/JunkScanner.swift`
-- Test: `Tests/CleanCoreTests/JunkScannerTests.swift`
+- Create: `Sources/TrimCore/JunkScanner.swift`
+- Test: `Tests/TrimCoreTests/JunkScannerTests.swift`
 
 **Interfaces:**
 - Consumes:
@@ -1827,7 +1827,7 @@ public struct IgnoreRules: Sendable {
 - [ ] **Step 1: Write the failing test**
     ```swift
     import XCTest
-    @testable import CleanCore
+    @testable import TrimCore
 
     final class JunkScannerTests: XCTestCase {
 
@@ -2043,9 +2043,9 @@ public struct IgnoreRules: Sendable {
 
 - [ ] **Step 5: Stage (user commits)**
     ```bash
-    git add Sources/CleanCore/JunkScanner.swift Tests/CleanCoreTests/JunkScannerTests.swift
+    git add Sources/TrimCore/JunkScanner.swift Tests/TrimCoreTests/JunkScannerTests.swift
     # Recommended commit message (user runs `git commit`):
-    #   feat(CleanCore): add JunkScanner with per-bundle cache + aggregated dev-junk roots
+    #   feat(TrimCore): add JunkScanner with per-bundle cache + aggregated dev-junk roots
     #
     #   - defaultRoots(home:) maps the 7 standard junk locations to ItemKind
     #   - perBundleSubdirs roots emit one ScanItem per bundle-id subdir, skipping running apps
@@ -2055,8 +2055,8 @@ public struct IgnoreRules: Sendable {
 ### Task 9: DuplicateFinder (size → hardlink collapse → partial hash → full SHA256 → clone probe)
 
 **Files:**
-- Create: `Sources/CleanCore/DuplicateFinder.swift`
-- Test: `Tests/CleanCoreTests/DuplicateFinderTests.swift`
+- Create: `Sources/TrimCore/DuplicateFinder.swift`
+- Test: `Tests/TrimCoreTests/DuplicateFinderTests.swift`
 
 **Interfaces:**
 - Consumes:
@@ -2081,7 +2081,7 @@ public struct IgnoreRules: Sendable {
 ```swift
 import XCTest
 import Darwin
-@testable import CleanCore
+@testable import TrimCore
 
 final class DuplicateFinderTests: XCTestCase {
     private var base: URL!
@@ -2383,7 +2383,7 @@ private enum CloneIDProbe {
 - [ ] **Step 5: Stage (user commits)**
 
 ```bash
-git add Sources/CleanCore/DuplicateFinder.swift Tests/CleanCoreTests/DuplicateFinderTests.swift
+git add Sources/TrimCore/DuplicateFinder.swift Tests/TrimCoreTests/DuplicateFinderTests.swift
 # Recommended commit message (USER runs the commit):
 # feat(core): DuplicateFinder — size→hardlink-collapse→partial→full SHA256 with APFS clone probe
 #
@@ -2398,8 +2398,8 @@ git add Sources/CleanCore/DuplicateFinder.swift Tests/CleanCoreTests/DuplicateFi
 ### Task 10: AppUninstaller
 
 **Files:**
-- Create: `Sources/CleanCore/AppUninstaller.swift`
-- Test: `Tests/CleanCoreTests/AppUninstallerTests.swift`
+- Create: `Sources/TrimCore/AppUninstaller.swift`
+- Test: `Tests/TrimCoreTests/AppUninstallerTests.swift`
 
 **Interfaces:**
 - Consumes:
@@ -2417,7 +2417,7 @@ git add Sources/CleanCore/DuplicateFinder.swift Tests/CleanCoreTests/DuplicateFi
 - [ ] **Step 1: Write the failing test**
     ```swift
     import XCTest
-    @testable import CleanCore
+    @testable import TrimCore
 
     final class AppUninstallerTests: XCTestCase {
         private var home: URL!
@@ -2522,7 +2522,7 @@ git add Sources/CleanCore/DuplicateFinder.swift Tests/CleanCoreTests/DuplicateFi
 
 - [ ] **Step 2: Run test to verify it fails**
     Run: `swift test --filter AppUninstallerTests`
-    Expected: FAIL — compile error "cannot find 'AppUninstaller' in scope" / "cannot find 'UninstallPlan' in scope" because `Sources/CleanCore/AppUninstaller.swift` does not exist yet.
+    Expected: FAIL — compile error "cannot find 'AppUninstaller' in scope" / "cannot find 'UninstallPlan' in scope" because `Sources/TrimCore/AppUninstaller.swift` does not exist yet.
 
 - [ ] **Step 3: Write minimal implementation**
     ```swift
@@ -2696,18 +2696,18 @@ git add Sources/CleanCore/DuplicateFinder.swift Tests/CleanCoreTests/DuplicateFi
 
 - [ ] **Step 5: Stage (user commits)**
     ```bash
-    git add Sources/CleanCore/AppUninstaller.swift Tests/CleanCoreTests/AppUninstallerTests.swift
+    git add Sources/TrimCore/AppUninstaller.swift Tests/TrimCoreTests/AppUninstallerTests.swift
     # Recommended commit message (run yourself):
-    # feat(CleanCore): add AppUninstaller — parse CFBundleIdentifier and classify ~/Library leftovers (exact->auto, name/prefix/group->evidence)
+    # feat(TrimCore): add AppUninstaller — parse CFBundleIdentifier and classify ~/Library leftovers (exact->auto, name/prefix/group->evidence)
     ```
 
 ### Task 11: MenuBarView — live monitor + memory info card
 
 **Files:**
-- Create: `Sources/CleanCore/Formatting.swift`
-- Create: `Sources/CleanApp/MenuBarView.swift`
-- Update: `Sources/CleanApp/CleanStatusApp.swift`
-- Test: `Tests/CleanCoreTests/FormattingTests.swift`
+- Create: `Sources/TrimCore/Formatting.swift`
+- Create: `Sources/TrimMyMacApp/MenuBarView.swift`
+- Update: `Sources/TrimMyMacApp/TrimMyMacApp.swift`
+- Test: `Tests/TrimCoreTests/FormattingTests.swift`
 
 **Interfaces:**
 - Consumes (verbatim from FROZEN CONTRACT):
@@ -2716,19 +2716,19 @@ git add Sources/CleanCore/DuplicateFinder.swift Tests/CleanCoreTests/DuplicateFi
   - `@MainActor public final class MemoryMonitor: ObservableObject { @Published public private(set) var latest: MemorySample?; public init(); public func sample() -> MemorySample; public func start(onChange: @escaping (MemoryPressure) -> Void); public func stop() }`
   - `public struct DiskSample: Sendable { public let total: Int64; public let availableImportant: Int64 }`
   - `public struct DiskMetrics { public init(); public func sample(volume: URL) -> DiskSample? }`
-- Produces (new pure helper in CleanCore — not in the frozen contract, additive only):
+- Produces (new pure helper in TrimCore — not in the frozen contract, additive only):
   - `public func humanReadableBytes(_ bytes: Int64) -> String`
   - `public func humanReadableBytes(_ bytes: UInt64) -> String`
   - `public func memoryUsagePercent(used: UInt64, total: UInt64) -> Int`
   - SwiftUI surface (`MenuBarView`, label view, placeholder sheets) — verified MANUALLY.
 
-> NOTE: This task is mostly UI, so the real automated verification is on the **pure formatting/percent helpers** in `CleanCore`. The SwiftUI shell (`MenuBarView`, `CleanStatusApp`) is verified MANUALLY by building and running. The three Korean buttons (정크 = junk, 중복 = duplicate, 앱 삭제 = app delete) are state toggles that open **placeholder sheets** here; later tasks replace the sheet bodies. Per decision 2 the memory info card is **read-only — NO purge button**.
+> NOTE: This task is mostly UI, so the real automated verification is on the **pure formatting/percent helpers** in `TrimCore`. The SwiftUI shell (`MenuBarView`, `TrimMyMacApp`) is verified MANUALLY by building and running. The three Korean buttons (정크 = junk, 중복 = duplicate, 앱 삭제 = app delete) are state toggles that open **placeholder sheets** here; later tasks replace the sheet bodies. Per decision 2 the memory info card is **read-only — NO purge button**.
 
 - [ ] **Step 1: Write the failing test** (pure helpers only)
     ```swift
-    // Tests/CleanCoreTests/FormattingTests.swift
+    // Tests/TrimCoreTests/FormattingTests.swift
     import XCTest
-    @testable import CleanCore
+    @testable import TrimCore
 
     final class FormattingTests: XCTestCase {
 
@@ -2784,7 +2784,7 @@ git add Sources/CleanCore/DuplicateFinder.swift Tests/CleanCoreTests/DuplicateFi
 
 - [ ] **Step 3a: Write the pure helpers**
     ```swift
-    // Sources/CleanCore/Formatting.swift
+    // Sources/TrimCore/Formatting.swift
     import Foundation
 
     /// Human-readable byte string with a fixed rounding rule:
@@ -2833,9 +2833,9 @@ git add Sources/CleanCore/DuplicateFinder.swift Tests/CleanCoreTests/DuplicateFi
 
 - [ ] **Step 3b: Write the menu-bar SwiftUI views**
     ```swift
-    // Sources/CleanApp/MenuBarView.swift
+    // Sources/TrimMyMacApp/MenuBarView.swift
     import SwiftUI
-    import CleanCore
+    import TrimCore
 
     // MARK: - Pressure presentation
 
@@ -2949,7 +2949,7 @@ git add Sources/CleanCore/DuplicateFinder.swift Tests/CleanCoreTests/DuplicateFi
 
         private var header: some View {
             HStack {
-                Text("CleanStatus").font(.headline)
+                Text("TrimMyMac").font(.headline)
                 Spacer()
                 if let sample {
                     pressurePill(sample.pressure)
@@ -3051,12 +3051,12 @@ git add Sources/CleanCore/DuplicateFinder.swift Tests/CleanCoreTests/DuplicateFi
 
 - [ ] **Step 3c: Wire the views into the app entry point**
     ```swift
-    // Sources/CleanApp/CleanStatusApp.swift
+    // Sources/TrimMyMacApp/TrimMyMacApp.swift
     import SwiftUI
-    import CleanCore
+    import TrimCore
 
     @main
-    struct CleanStatusApp: App {
+    struct TrimMyMacApp: App {
         @StateObject private var memoryMonitor = MemoryMonitor()
 
         var body: some Scene {
@@ -3079,7 +3079,7 @@ git add Sources/CleanCore/DuplicateFinder.swift Tests/CleanCoreTests/DuplicateFi
     ```bash
     swift build                       # fast compile check of the SwiftUI target
     scripts/build-app.sh              # produces the signed .app bundle
-    open ./build/CleanStatus.app      # adjust path to whatever build-app.sh emits
+    open ./build/TrimMyMac.app      # adjust path to whatever build-app.sh emits
     ```
     Expected observations (state each must be visible):
     1. A menu-bar item appears showing a memory chip icon plus text like `57% · 312 GB free` (a live percent and a human-readable free-disk figure, NOT "—" after the first second).
@@ -3093,28 +3093,28 @@ git add Sources/CleanCore/DuplicateFinder.swift Tests/CleanCoreTests/DuplicateFi
 
 - [ ] **Step 5: Stage (user commits)**
     ```bash
-    git add Sources/CleanCore/Formatting.swift \
-            Sources/CleanApp/MenuBarView.swift \
-            Sources/CleanApp/CleanStatusApp.swift \
-            Tests/CleanCoreTests/FormattingTests.swift
+    git add Sources/TrimCore/Formatting.swift \
+            Sources/TrimMyMacApp/MenuBarView.swift \
+            Sources/TrimMyMacApp/TrimMyMacApp.swift \
+            Tests/TrimCoreTests/FormattingTests.swift
     # Recommended commit message (USER runs `git commit`, not the implementer):
     #
     #   feat(ui): live menu-bar monitor + read-only memory card
     #
-    #   - Add humanReadableBytes / memoryUsagePercent pure helpers in CleanCore (XCTest-covered)
+    #   - Add humanReadableBytes / memoryUsagePercent pure helpers in TrimCore (XCTest-covered)
     #   - MenuBarView: pressure pill, used/total + swap, free disk, read-only memory card (no purge, decision 2)
     #   - MenuBarLabel shows live mem% and free disk; 3s timer + MemoryMonitor.start drive updates
     #   - 정크 / 중복 / 앱 삭제 buttons open placeholder sheets (wired in later tasks)
-    #   - MenuBarExtra(.window) wired in CleanStatusApp
+    #   - MenuBarExtra(.window) wired in TrimMyMacApp
     ```
 
 ### Task 12: JunkPanel (scan -> preview -> trash)
 
 **Files:**
-- Create: `Sources/CleanCore/SelectionSummary.swift`
-- Create: `Sources/CleanApp/Panels/JunkPanel.swift`
-- Edit: `Sources/CleanApp/MenuBarView.swift` (wire junk-cleanup button)
-- Test: `Tests/CleanCoreTests/SelectionSummaryTests.swift`
+- Create: `Sources/TrimCore/SelectionSummary.swift`
+- Create: `Sources/TrimMyMacApp/Panels/JunkPanel.swift`
+- Edit: `Sources/TrimMyMacApp/MenuBarView.swift` (wire junk-cleanup button)
+- Test: `Tests/TrimCoreTests/SelectionSummaryTests.swift`
 
 **Interfaces:**
 - Consumes (from FROZEN CONTRACT):
@@ -3127,27 +3127,27 @@ git add Sources/CleanCore/DuplicateFinder.swift Tests/CleanCoreTests/DuplicateFi
   - `public typealias RunningCheck = @Sendable (String) -> Bool`
   - `public struct SafeRemover { public init(probe: StatProbing, fileManager: FileManager); public func trash(_ items: [ScanItem]) -> TrashOutcome }`
   - `public struct TrashOutcome: Sendable { public let trashed: [URL]; public let skipped: [SkippedItem]; public let failed: [FailedItem]; public let reclaimedAllocated: Int64 }`
-- Produces (new additive CleanCore helper — does NOT alter any frozen signature):
+- Produces (new additive TrimCore helper — does NOT alter any frozen signature):
   - `public struct SelectionSummary: Equatable, Sendable { public let count: Int; public let logicalBytes: Int64; public let allocatedBytes: Int64; public init(count: Int, logicalBytes: Int64, allocatedBytes: Int64) }`
   - `public func selectionSummary(items: [ScanItem]) -> SelectionSummary`
-  - SwiftUI view `JunkPanel` in `CleanApp` (UI; verified manually).
+  - SwiftUI view `JunkPanel` in `TrimMyMacApp` (UI; verified manually).
 
 ---
 
 - [ ] **Step 1: Write the failing test**
-    Test the pure, non-UI selection-summary logic extracted into CleanCore. No UI involved — real `ScanItem` fixtures, real assertions.
+    Test the pure, non-UI selection-summary logic extracted into TrimCore. No UI involved — real `ScanItem` fixtures, real assertions.
 
     ```swift
-    // Tests/CleanCoreTests/SelectionSummaryTests.swift
+    // Tests/TrimCoreTests/SelectionSummaryTests.swift
     import XCTest
-    @testable import CleanCore
+    @testable import TrimCore
 
     final class SelectionSummaryTests: XCTestCase {
 
         private func makeItem(logical: Int64, allocated: Int64, kind: ItemKind = .userCache) -> ScanItem {
             ScanItem(
                 id: UUID(),
-                url: URL(fileURLWithPath: "/tmp/clean-status-fixture/\(UUID().uuidString)"),
+                url: URL(fileURLWithPath: "/tmp/trimmymac-fixture/\(UUID().uuidString)"),
                 logicalSize: logical,
                 allocatedSize: allocated,
                 kind: kind,
@@ -3194,9 +3194,9 @@ git add Sources/CleanCore/DuplicateFinder.swift Tests/CleanCoreTests/DuplicateFi
     Run: `swift test --filter SelectionSummaryTests`
     Expected: FAIL — compile error / unresolved identifier: `cannot find 'selectionSummary' in scope` and `cannot find type 'SelectionSummary' in scope` (the helper does not exist yet).
 
-- [ ] **Step 3a: Write minimal implementation — the testable CleanCore helper**
+- [ ] **Step 3a: Write minimal implementation — the testable TrimCore helper**
     ```swift
-    // Sources/CleanCore/SelectionSummary.swift
+    // Sources/TrimCore/SelectionSummary.swift
     import Foundation
 
     /// Pure, UI-free summary of a set of selected scan items.
@@ -3229,10 +3229,10 @@ git add Sources/CleanCore/DuplicateFinder.swift Tests/CleanCoreTests/DuplicateFi
     The view-model runs `JunkScanner.scan()` on a cancellable detached background `Task`, and `SafeRemover.trash` likewise off the main actor. Both `JunkScanner` and `SafeRemover` are reconstructed inside the detached closures from `Sendable` building blocks (`IgnoreRules.default`, `DefaultStatProbe`, a capture-free `@Sendable` running-check, and a `Sendable` `home: URL` / `[ScanItem]`), so nothing non-`Sendable` crosses an isolation boundary under Swift 6 strict concurrency.
 
     ```swift
-    // Sources/CleanApp/Panels/JunkPanel.swift
+    // Sources/TrimMyMacApp/Panels/JunkPanel.swift
     import SwiftUI
     import AppKit
-    import CleanCore
+    import TrimCore
 
     @MainActor
     final class JunkPanelModel: ObservableObject {
@@ -3249,7 +3249,7 @@ git add Sources/CleanCore/DuplicateFinder.swift Tests/CleanCoreTests/DuplicateFi
             self.home = home
         }
 
-        /// Summary of the currently *selected* items (UI-free logic lives in CleanCore).
+        /// Summary of the currently *selected* items (UI-free logic lives in TrimCore).
         var summary: SelectionSummary {
             selectionSummary(items: items.filter { selectedIDs.contains($0.id) })
         }
@@ -3438,7 +3438,7 @@ git add Sources/CleanCore/DuplicateFinder.swift Tests/CleanCoreTests/DuplicateFi
 
     In the app entry point's `body` (the `Scene` builder), register the window:
     ```swift
-    // Sources/CleanApp/<AppEntry>.swift  (inside `var body: some Scene { ... }`)
+    // Sources/TrimMyMacApp/<AppEntry>.swift  (inside `var body: some Scene { ... }`)
     Window("Junk Cleanup", id: "junk") {
         JunkPanel()
     }
@@ -3447,7 +3447,7 @@ git add Sources/CleanCore/DuplicateFinder.swift Tests/CleanCoreTests/DuplicateFi
 
     In `MenuBarView`, open it from the junk-cleanup button:
     ```swift
-    // Sources/CleanApp/MenuBarView.swift
+    // Sources/TrimMyMacApp/MenuBarView.swift
     // add near the top of the view struct:
     @Environment(\.openWindow) private var openWindow
 
@@ -3465,7 +3465,7 @@ git add Sources/CleanCore/DuplicateFinder.swift Tests/CleanCoreTests/DuplicateFi
     Build and run the app, then exercise the scan -> preview -> trash flow:
     ```bash
     swift build
-    swift run CleanApp
+    swift run TrimMyMacApp
     ```
     Precise expected observations:
     1. Click the menu-bar item, then choose **Junk Cleanup…** — the "Junk Cleanup" window opens.
@@ -3477,12 +3477,12 @@ git add Sources/CleanCore/DuplicateFinder.swift Tests/CleanCoreTests/DuplicateFi
 
 - [ ] **Step 6: Stage (user commits)**
     ```bash
-    git add Sources/CleanCore/SelectionSummary.swift \
-            Sources/CleanApp/Panels/JunkPanel.swift \
-            Sources/CleanApp/MenuBarView.swift \
-            Tests/CleanCoreTests/SelectionSummaryTests.swift
+    git add Sources/TrimCore/SelectionSummary.swift \
+            Sources/TrimMyMacApp/Panels/JunkPanel.swift \
+            Sources/TrimMyMacApp/MenuBarView.swift \
+            Tests/TrimCoreTests/SelectionSummaryTests.swift
     # If the app-entry Window wiring lives in a separate file, stage it too, e.g.:
-    # git add Sources/CleanApp/CleanApp.swift
+    # git add Sources/TrimMyMacApp/TrimMyMacApp.swift
     #
     # Recommended commit message (USER runs `git commit`):
     #   feat(app): JunkPanel scan→preview→trash + testable selectionSummary
@@ -3492,16 +3492,16 @@ git add Sources/CleanCore/DuplicateFinder.swift Tests/CleanCoreTests/DuplicateFi
     #     shows per-item allocated size + running reclaimable total.
     #   - Move-to-Trash calls SafeRemover.trash and displays TrashOutcome counts/bytes.
     #   - Wired junk-cleanup button in MenuBarView to open the panel window.
-    #   - Extracted UI-free selectionSummary(items:) -> SelectionSummary into CleanCore
+    #   - Extracted UI-free selectionSummary(items:) -> SelectionSummary into TrimCore
     #     with XCTest coverage. UI verified manually (items listed; files appear in Finder Trash).
     ```
 
 ### Task 13: DuplicatePanel (folder pick -> scan -> grouped -> trash)
 
 **Files:**
-- Create: `Sources/CleanApp/Panels/DuplicatePanel.swift`
-- Create: `Sources/CleanCore/DuplicateSelection.swift`
-- Test: `Tests/CleanCoreTests/DuplicateSelectionTests.swift`
+- Create: `Sources/TrimMyMacApp/Panels/DuplicatePanel.swift`
+- Create: `Sources/TrimCore/DuplicateSelection.swift`
+- Test: `Tests/TrimCoreTests/DuplicateSelectionTests.swift`
 
 **Interfaces:**
 - Consumes:
@@ -3515,19 +3515,19 @@ git add Sources/CleanCore/DuplicateFinder.swift Tests/CleanCoreTests/DuplicateFi
   - `public struct TrashOutcome: Sendable { public let trashed: [URL]; public let skipped: [SkippedItem]; public let failed: [FailedItem]; public let reclaimedAllocated: Int64 }`
   - `public struct ScanItem: Identifiable, Sendable { public let id: UUID; public let url: URL; public let logicalSize: Int64; public let allocatedSize: Int64; public let kind: ItemKind; public let snapshot: StatSnapshot; public var isAutoSelected: Bool; public var evidence: String? }`
 - Produces:
-  - `public func autoSelectedItems(groups: [DuplicateGroup]) -> [ScanItem]` (pure helper in CleanCore)
+  - `public func autoSelectedItems(groups: [DuplicateGroup]) -> [ScanItem]` (pure helper in TrimCore)
   - `struct DuplicatePanel: View` (UI; verified MANUALLY)
 
 - [ ] **Step 1: Write the failing test for the pure selection helper**
     ```swift
     import XCTest
-    @testable import CleanCore
+    @testable import TrimCore
 
     final class DuplicateSelectionTests: XCTestCase {
 
         // Build a throwaway ScanItem with deterministic fields.
         private func makeItem(_ name: String, size: Int64) -> ScanItem {
-            let url = URL(fileURLWithPath: "/tmp/clean-status-fixtures/\(name)")
+            let url = URL(fileURLWithPath: "/tmp/trimmymac-fixtures/\(name)")
             let snap = StatSnapshot(size: size, mtime: 1_000, fileID: 1, deviceID: 1)
             return ScanItem(
                 id: UUID(),
@@ -3588,11 +3588,11 @@ git add Sources/CleanCore/DuplicateFinder.swift Tests/CleanCoreTests/DuplicateFi
 
 - [ ] **Step 2: Run test to verify it fails**
     Run: `swift test --filter DuplicateSelectionTests`
-    Expected: FAIL — compile error / "cannot find 'autoSelectedItems' in scope" because `Sources/CleanCore/DuplicateSelection.swift` does not exist yet.
+    Expected: FAIL — compile error / "cannot find 'autoSelectedItems' in scope" because `Sources/TrimCore/DuplicateSelection.swift` does not exist yet.
 
-- [ ] **Step 3: Write the pure helper in CleanCore**
+- [ ] **Step 3: Write the pure helper in TrimCore**
     ```swift
-    // Sources/CleanCore/DuplicateSelection.swift
+    // Sources/TrimCore/DuplicateSelection.swift
     import Foundation
 
     /// Default auto-selection across duplicate groups.
@@ -3615,12 +3615,12 @@ git add Sources/CleanCore/DuplicateFinder.swift Tests/CleanCoreTests/DuplicateFi
     Expected: PASS (4 tests).
 
 - [ ] **Step 5: Write the DuplicatePanel SwiftUI view (UI — verified manually)**
-    Create `Sources/CleanApp/Panels/DuplicatePanel.swift`. The panel: picks a folder via `NSOpenPanel`, runs `DuplicateFinder.find(in:)` on a cancellable background `Task`, renders each group with the kept original highlighted and other members checkable, visually flags `.cloneSuspected` groups (selected off by default, evidence shown), and trashes the user's selection via `SafeRemover`.
+    Create `Sources/TrimMyMacApp/Panels/DuplicatePanel.swift`. The panel: picks a folder via `NSOpenPanel`, runs `DuplicateFinder.find(in:)` on a cancellable background `Task`, renders each group with the kept original highlighted and other members checkable, visually flags `.cloneSuspected` groups (selected off by default, evidence shown), and trashes the user's selection via `SafeRemover`.
     ```swift
-    // Sources/CleanApp/Panels/DuplicatePanel.swift
+    // Sources/TrimMyMacApp/Panels/DuplicatePanel.swift
     import SwiftUI
     import AppKit
-    import CleanCore
+    import TrimCore
 
     @MainActor
     struct DuplicatePanel: View {
@@ -3889,7 +3889,7 @@ git add Sources/CleanCore/DuplicateFinder.swift Tests/CleanCoreTests/DuplicateFi
     Run:
     ```bash
     swift build
-    swift run CleanApp
+    swift run TrimMyMacApp
     ```
     Setup fixtures (in a separate terminal) so there is something to find:
     ```bash
@@ -3909,27 +3909,27 @@ git add Sources/CleanCore/DuplicateFinder.swift Tests/CleanCoreTests/DuplicateFi
 
 - [ ] **Step 7: Stage (user commits)**
     ```bash
-    git add Sources/CleanCore/DuplicateSelection.swift \
-            Sources/CleanApp/Panels/DuplicatePanel.swift \
-            Tests/CleanCoreTests/DuplicateSelectionTests.swift
+    git add Sources/TrimCore/DuplicateSelection.swift \
+            Sources/TrimMyMacApp/Panels/DuplicatePanel.swift \
+            Tests/TrimCoreTests/DuplicateSelectionTests.swift
     # Recommended commit message (USER runs `git commit`):
     # feat(app): DuplicatePanel folder-scan duplicate review + trash
     #
     # - NSOpenPanel folder pick -> cancellable DuplicateFinder.find Task
     # - exact groups: keep first, pre-check rest; cloneSuspected flagged, never auto-selected, evidence shown
     # - trash selection via SafeRemover; show TrashOutcome summary
-    # - extract pure autoSelectedItems(groups:) into CleanCore + XCTest
+    # - extract pure autoSelectedItems(groups:) into TrimCore + XCTest
     # - wire Duplicate button from MenuBarView; UI verified manually
     ```
 
 ### Task 14: UninstallPanel (drop .app → leftovers → trash) + FDA onboarding
 
 **Files:**
-- Create: `Sources/CleanCore/FullDiskAccess.swift` (pure, testable classifier)
-- Create: `Sources/CleanApp/FullDiskAccess.swift` (FDA onboarding sheet + open-Settings action)
-- Create: `Sources/CleanApp/Panels/UninstallPanel.swift` (the uninstall UI)
-- Edit: `Sources/CleanApp/MenuBarView.swift` (wire the app-delete button)
-- Test: `Tests/CleanCoreTests/FullDiskAccessTests.swift`
+- Create: `Sources/TrimCore/FullDiskAccess.swift` (pure, testable classifier)
+- Create: `Sources/TrimMyMacApp/FullDiskAccess.swift` (FDA onboarding sheet + open-Settings action)
+- Create: `Sources/TrimMyMacApp/Panels/UninstallPanel.swift` (the uninstall UI)
+- Edit: `Sources/TrimMyMacApp/MenuBarView.swift` (wire the app-delete button)
+- Test: `Tests/TrimCoreTests/FullDiskAccessTests.swift`
 
 **Interfaces:**
 - Consumes (FROZEN CONTRACT):
@@ -3939,9 +3939,9 @@ git add Sources/CleanCore/DuplicateFinder.swift Tests/CleanCoreTests/DuplicateFi
   - `Scanner.init(ignore: IgnoreRules, probe: StatProbing)`, `IgnoreRules.default`, `DefaultStatProbe.init()`
   - `SafeRemover.init(probe: StatProbing, fileManager: FileManager)` / `func trash(_ items: [ScanItem]) -> TrashOutcome`
   - `TrashOutcome { let trashed: [URL]; let skipped: [SkippedItem]; let failed: [FailedItem]; let reclaimedAllocated: Int64 }`
-- Produces (new CleanCore public surface introduced by this task — not in the frozen contract, additive only):
+- Produces (new TrimCore public surface introduced by this task — not in the frozen contract, additive only):
   - `public enum FullDiskAccessClassifier { public static func needsFullDiskAccess(errno code: Int32) -> Bool; public static func needsFullDiskAccess(for error: Error) -> Bool }`
-  - SwiftUI: `UninstallPanel` (CleanApp), `FullDiskAccessSheet` (CleanApp) — manually verified.
+  - SwiftUI: `UninstallPanel` (TrimMyMacApp), `FullDiskAccessSheet` (TrimMyMacApp) — manually verified.
 
 ---
 
@@ -3950,7 +3950,7 @@ git add Sources/CleanCore/DuplicateFinder.swift Tests/CleanCoreTests/DuplicateFi
 ```swift
 import XCTest
 import Foundation
-@testable import CleanCore
+@testable import TrimCore
 
 final class FullDiskAccessTests: XCTestCase {
 
@@ -4004,7 +4004,7 @@ final class FullDiskAccessTests: XCTestCase {
 
 - [ ] **Step 3: Write minimal implementation**
 
-`Sources/CleanCore/FullDiskAccess.swift` (pure, no UI, no AppKit — fully testable):
+`Sources/TrimCore/FullDiskAccess.swift` (pure, no UI, no AppKit — fully testable):
 
 ```swift
 import Foundation
@@ -4060,7 +4060,7 @@ public enum FullDiskAccessClassifier {
 }
 ```
 
-`Sources/CleanApp/FullDiskAccess.swift` (onboarding sheet + open-Settings action — verified URL):
+`Sources/TrimMyMacApp/FullDiskAccess.swift` (onboarding sheet + open-Settings action — verified URL):
 
 ```swift
 import SwiftUI
@@ -4078,13 +4078,13 @@ struct FullDiskAccessSheet: View {
             Label("Full Disk Access Required", systemImage: "lock.shield")
                 .font(.headline)
 
-            Text("CleanStatus needs Full Disk Access to scan and clean files under your "
+            Text("TrimMyMac needs Full Disk Access to scan and clean files under your "
                  + "~/Library folder. Grant access in System Settings, then return here and retry.")
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
-            Text("System Settings → Privacy & Security → Full Disk Access → enable CleanStatus.")
+            Text("System Settings → Privacy & Security → Full Disk Access → enable TrimMyMac.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
 
@@ -4110,13 +4110,13 @@ struct FullDiskAccessSheet: View {
 }
 ```
 
-`Sources/CleanApp/Panels/UninstallPanel.swift`:
+`Sources/TrimMyMacApp/Panels/UninstallPanel.swift`:
 
 ```swift
 import SwiftUI
 import AppKit
 import UniformTypeIdentifiers
-import CleanCore
+import TrimCore
 
 @MainActor
 struct UninstallPanel: View {
@@ -4367,7 +4367,7 @@ struct UninstallPanel: View {
 }
 ```
 
-`Sources/CleanApp/MenuBarView.swift` — wire the app-delete button (add this Button inside the existing menu content, plus a `@State` flag and a popover/sheet to host the panel):
+`Sources/TrimMyMacApp/MenuBarView.swift` — wire the app-delete button (add this Button inside the existing menu content, plus a `@State` flag and a popover/sheet to host the panel):
 
 ```swift
 // --- add to MenuBarView's @State block ---
@@ -4391,27 +4391,27 @@ Button {
     Expected: PASS (all 7 cases — EPERM/EACCES/POSIXError/Cocoa-no-permission/nested-EPERM → true; ENOENT/no-such-file → false).
 
     **Manual UI verification (UninstallPanel + FDA sheet — no automated UI test):**
-    1. Build & run: `swift build && swift run CleanApp`
+    1. Build & run: `swift build && swift run TrimMyMacApp`
     2. Open the menu-bar item → click **Uninstall App…**.
     3. Click **Choose .app…**, pick an app from `/Applications` (or drag a `.app` onto the drop zone). Expected: the app row appears checked, and leftover rows appear — exact `CFBundleIdentifier` matches are pre-checked; ambiguous (name-only / prefix / shared-group) rows are unchecked and show an orange "⚠︎ <evidence>" line.
     4. Confirm the summary line shows "Selected N of M • <size>" and updates as you toggle rows.
     5. Click **Move N Item(s) to Trash**. Expected: items appear in Finder's Trash (never hard-deleted — SafeRemover uses `trashItem`); the outcome line shows Trashed/Skipped/Failed counts and reclaimed bytes.
-    6. FDA path: temporarily revoke Full Disk Access (System Settings → Privacy & Security → Full Disk Access → disable CleanStatus), then load an app whose leftover scan hits `~/Library`. Expected: the **Full Disk Access Required** sheet appears; **Open System Settings** opens the Full Disk Access pane (`x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles`); after granting and clicking **Retry**, the plan loads.
+    6. FDA path: temporarily revoke Full Disk Access (System Settings → Privacy & Security → Full Disk Access → disable TrimMyMac), then load an app whose leftover scan hits `~/Library`. Expected: the **Full Disk Access Required** sheet appears; **Open System Settings** opens the Full Disk Access pane (`x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles`); after granting and clicking **Retry**, the plan loads.
 
 - [ ] **Step 5: Stage (user commits)**
 
 ```bash
-git add Sources/CleanCore/FullDiskAccess.swift \
-        Sources/CleanApp/FullDiskAccess.swift \
-        Sources/CleanApp/Panels/UninstallPanel.swift \
-        Sources/CleanApp/MenuBarView.swift \
-        Tests/CleanCoreTests/FullDiskAccessTests.swift
+git add Sources/TrimCore/FullDiskAccess.swift \
+        Sources/TrimMyMacApp/FullDiskAccess.swift \
+        Sources/TrimMyMacApp/Panels/UninstallPanel.swift \
+        Sources/TrimMyMacApp/MenuBarView.swift \
+        Tests/TrimCoreTests/FullDiskAccessTests.swift
 # Recommended commit message (run yourself):
 # feat(app): UninstallPanel (drop .app -> leftovers -> trash) + Full Disk Access onboarding
 #
 # - UninstallPanel: NSOpenPanel/drag-drop .app, AppUninstaller.plan, exact matches
 #   auto-checked, ambiguous leftovers shown with evidence, trash via SafeRemover.
-# - FullDiskAccessClassifier (CleanCore): pure errno/Error -> needsFullDiskAccess map
+# - FullDiskAccessClassifier (TrimCore): pure errno/Error -> needsFullDiskAccess map
 #   (EPERM/EACCES/NSFileReadNoPermissionError -> true; ENOENT/notFound -> false).
 # - FullDiskAccessSheet: opens Privacy_AllFiles pane via NSWorkspace.
 # - Wire Uninstall App… button from MenuBarView.

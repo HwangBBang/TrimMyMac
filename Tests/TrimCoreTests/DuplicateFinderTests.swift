@@ -1,9 +1,9 @@
 import Testing
 import Darwin
 import Foundation
-@testable import CleanCore
+@testable import TrimCore
 
-// NOTE: CleanCore.Scanner to avoid ambiguity with Foundation.Scanner
+// NOTE: TrimCore.Scanner to avoid ambiguity with Foundation.Scanner
 
 @Suite("DuplicateFinder")
 struct DuplicateFinderTests {
@@ -11,7 +11,7 @@ struct DuplicateFinderTests {
     private let fm = FileManager.default
 
     private func makeFinder() -> DuplicateFinder {
-        let scanner = CleanCore.Scanner(ignore: .default, probe: DefaultStatProbe())
+        let scanner = TrimCore.Scanner(ignore: .default, probe: DefaultStatProbe())
         return DuplicateFinder(scanner: scanner, probe: DefaultStatProbe())
     }
 

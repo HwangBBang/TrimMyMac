@@ -1,6 +1,6 @@
 import Testing
 import Dispatch
-@testable import CleanCore
+@testable import TrimCore
 
 @Suite("MemoryMonitor")
 struct MemoryMonitorTests {

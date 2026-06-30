@@ -1,6 +1,6 @@
 import Testing
 import Foundation
-@testable import CleanCore
+@testable import TrimCore
 
 @Suite("AppUninstaller")
 struct AppUninstallerTests {
@@ -68,7 +68,7 @@ struct AppUninstallerTests {
         let (home, fooApp) = try makeFixture()
         defer { try? FileManager.default.removeItem(at: home.deletingLastPathComponent()) }
 
-        let scanner = CleanCore.Scanner(ignore: .default, probe: DefaultStatProbe())
+        let scanner = TrimCore.Scanner(ignore: .default, probe: DefaultStatProbe())
         let uninstaller = AppUninstaller(scanner: scanner, home: home)
         let plan = try uninstaller.plan(for: fooApp)
 
@@ -123,7 +123,7 @@ struct AppUninstallerTests {
         try fm.createDirectory(at: contents, withIntermediateDirectories: true)
         try fm.createDirectory(at: home, withIntermediateDirectories: true)
 
-        let scanner = CleanCore.Scanner(ignore: .default, probe: DefaultStatProbe())
+        let scanner = TrimCore.Scanner(ignore: .default, probe: DefaultStatProbe())
         let uninstaller = AppUninstaller(scanner: scanner, home: home)
         #expect(throws: (any Error).self) {
             _ = try uninstaller.plan(for: emptyApp)
@@ -168,7 +168,7 @@ struct AppUninstallerTests {
         let dotSuffix = groupContainers.appendingPathComponent("com.acme.foo.shared", isDirectory: true)
         try fm.createDirectory(at: dotSuffix, withIntermediateDirectories: true)
 
-        let scanner = CleanCore.Scanner(ignore: .default, probe: DefaultStatProbe())
+        let scanner = TrimCore.Scanner(ignore: .default, probe: DefaultStatProbe())
         let uninstaller = AppUninstaller(scanner: scanner, home: home)
         let plan = try uninstaller.plan(for: fooApp)
 
@@ -195,7 +195,7 @@ struct AppUninstallerTests {
         let (home, fooApp) = try makeFixture()
         defer { try? FileManager.default.removeItem(at: home.deletingLastPathComponent()) }
 
-        let scanner = CleanCore.Scanner(ignore: .default, probe: DefaultStatProbe())
+        let scanner = TrimCore.Scanner(ignore: .default, probe: DefaultStatProbe())
         let uninstaller = AppUninstaller(scanner: scanner, home: home)
         let plan = try uninstaller.plan(for: fooApp)
 

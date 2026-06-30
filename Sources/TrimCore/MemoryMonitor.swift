@@ -44,7 +44,7 @@ public final class MemoryMonitor: ObservableObject {
     private var pressureSource: DispatchSourceMemoryPressure?
     private var onChangeHandler: ((MemoryPressure) -> Void)?
     private var latestPressure: MemoryPressure = .normal
-    private let monitorQueue = DispatchQueue(label: "com.cleanstatus.memorymonitor", qos: .utility)
+    private let monitorQueue = DispatchQueue(label: "com.trimmymac.memorymonitor", qos: .utility)
 
     public init() {}
 

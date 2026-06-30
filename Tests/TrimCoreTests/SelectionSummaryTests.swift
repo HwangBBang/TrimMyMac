@@ -1,6 +1,6 @@
 import Testing
 import Foundation
-@testable import CleanCore
+@testable import TrimCore
 
 @Suite("SelectionSummary")
 struct SelectionSummaryTests {
@@ -8,7 +8,7 @@ struct SelectionSummaryTests {
     private func makeItem(logical: Int64, allocated: Int64, kind: ItemKind = .userCache) -> ScanItem {
         ScanItem(
             id: UUID(),
-            url: URL(fileURLWithPath: "/tmp/clean-status-fixture/\(UUID().uuidString)"),
+            url: URL(fileURLWithPath: "/tmp/trimmymac-fixture/\(UUID().uuidString)"),
             logicalSize: logical,
             allocatedSize: allocated,
             kind: kind,

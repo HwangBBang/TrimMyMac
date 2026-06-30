@@ -1,6 +1,6 @@
 import Testing
 import Foundation
-@testable import CleanCore
+@testable import TrimCore
 
 @Suite("Scanner")
 struct ScannerTests {
@@ -26,8 +26,8 @@ struct ScannerTests {
         try data.write(to: url)
     }
 
-    private func makeScanner() -> CleanCore.Scanner {
-        CleanCore.Scanner(ignore: .default, probe: DefaultStatProbe())
+    private func makeScanner() -> TrimCore.Scanner {
+        TrimCore.Scanner(ignore: .default, probe: DefaultStatProbe())
     }
 
     // MARK: - 1a + 1b: nested files enumerated; node_modules skipped.
@@ -111,7 +111,7 @@ struct ScannerTests {
         let scanner = makeScanner()
         let captured = root
 
-        let task = Task { () throws -> [CleanCore.FileEntry] in
+        let task = Task { () throws -> [TrimCore.FileEntry] in
             try scanner.enumerate(captured)
         }
         task.cancel()

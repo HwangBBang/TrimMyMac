@@ -6,7 +6,7 @@
 import PackageDescription
 
 let package = Package(
-    name: "CleanStatus",
+    name: "TrimMyMac",
     platforms: [
         // macOS 26 (Tahoe). The string form is required because the
         // toolchain may not yet expose a `.v26` enum case.
@@ -14,8 +14,8 @@ let package = Package(
     ],
     targets: [
         .executableTarget(
-            name: "CleanApp",
-            dependencies: ["CleanCore"],
+            name: "TrimMyMacApp",
+            dependencies: ["TrimCore"],
             swiftSettings: [
                 .swiftLanguageMode(.v6)
             ],
@@ -25,14 +25,14 @@ let package = Package(
             ]
         ),
         .target(
-            name: "CleanCore",
+            name: "TrimCore",
             swiftSettings: [
                 .swiftLanguageMode(.v6)
             ]
         ),
         .testTarget(
-            name: "CleanCoreTests",
-            dependencies: ["CleanCore"],
+            name: "TrimCoreTests",
+            dependencies: ["TrimCore"],
             swiftSettings: [
                 .swiftLanguageMode(.v6),
                 // CommandLineTools does not add Testing.framework to compiler/linker

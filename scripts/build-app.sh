@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build, bundle, sign (named self-signed identity), and install CleanStatus.app.
+# Build, bundle, sign (named self-signed identity), and install TrimMyMac.app.
 set -euo pipefail
 
 # --- Resolve repo root (script lives in <root>/scripts) ---
@@ -8,12 +8,12 @@ ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 cd "${ROOT_DIR}"
 
 # --- Config ---
-APP_NAME="CleanStatus"
-EXE_NAME="CleanApp"
-BUNDLE_ID="com.hbh0112.cleanstatus"
+APP_NAME="TrimMyMac"
+EXE_NAME="TrimMyMacApp"
+BUNDLE_ID="com.hbh0112.trimmymac"
 SHORT_VERSION="${SHORT_VERSION:-0.1.0}"
 BUILD_VERSION="${BUILD_VERSION:-1}"
-CODESIGN_IDENTITY="${CODESIGN_IDENTITY:-CleanStatus Self-Signed}"
+CODESIGN_IDENTITY="${CODESIGN_IDENTITY:-TrimMyMac Self-Signed}"
 INSTALL_DIR="/Applications"
 
 BUILD_DIR="${ROOT_DIR}/.build/bundle"
