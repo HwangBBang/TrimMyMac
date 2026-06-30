@@ -1,0 +1,20 @@
+# Swift Package Manager
+.build/
+.swiftpm/
+Package.resolved
+
+# Build output
+*.app
+DerivedData/
+
+# macOS
+.DS_Store
+
+# Editor
+*.swp
+.vscode/
+.idea/
+
+# Agent working state (handoffs, SDD ledger) — local only, kept out of PRs
+.superpowers/
+.claude/
