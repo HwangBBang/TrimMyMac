@@ -14,4 +14,7 @@ DerivedData/
 *.swp
 .vscode/
 .idea/
+
+# Agent working state (handoffs, SDD ledger) — local only, kept out of PRs
 .superpowers/
+.claude/
