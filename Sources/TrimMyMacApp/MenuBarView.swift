@@ -253,25 +253,26 @@ struct MenuBarView: View {
             if agentMonitor.sessions.isEmpty {
                 Text("감지된 세션 없음").font(.callout).foregroundStyle(.secondary)
             } else {
-                // Could be many concurrent sessions; cap the height and scroll.
-                ScrollView {
-                    VStack(spacing: 6) {
-                        ForEach(agentMonitor.sessions) { session in
-                            HStack(spacing: 8) {
-                                VStack(alignment: .leading, spacing: 1) {
-                                    Text(session.kind.displayName).font(.callout)
-                                    Text("PID \(session.pid)").font(.caption2).foregroundStyle(.secondary)
-                                }
-                                Spacer()
-                                Text("CPU \(session.cpu)%").font(.callout).monospacedDigit()
-                                Text(humanReadableBytes(session.memory))
-                                    .font(.callout).monospacedDigit()
-                                    .frame(width: 76, alignment: .trailing)
-                            }
+                // A ScrollView collapses to ~0 height inside this content-sized popover,
+                // so render a bounded top-N list (already sorted by CPU then memory).
+                let shown = Array(agentMonitor.sessions.prefix(8))
+                ForEach(shown) { session in
+                    HStack(spacing: 8) {
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(session.kind.displayName).font(.callout)
+                            Text("PID \(session.pid)").font(.caption2).foregroundStyle(.secondary)
                         }
+                        Spacer()
+                        Text("CPU \(session.cpu)%").font(.callout).monospacedDigit()
+                        Text(humanReadableBytes(session.memory))
+                            .font(.callout).monospacedDigit()
+                            .frame(width: 76, alignment: .trailing)
                     }
                 }
-                .frame(maxHeight: 168)
+                if agentMonitor.sessions.count > shown.count {
+                    Text("+ \(agentMonitor.sessions.count - shown.count)개 더")
+                        .font(.caption2).foregroundStyle(.secondary)
+                }
             }
         }
     }

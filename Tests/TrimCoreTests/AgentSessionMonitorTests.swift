@@ -32,18 +32,20 @@ struct AgentSessionMonitorTests {
 
     // MARK: - cpu math
 
-    @Test func cpuPercentOfTotalHalfCoreOnFour() {
-        // 0.5s cpu over 1s wall on 4 cores -> 0.5/(1*4)*100 = 12.5
-        let p = AgentSessionMonitor.cpuPercentOfTotal(deltaCpuNs: 0.5e9, elapsedNs: 1e9, cpuCount: 4)
-        #expect(abs(p - 12.5) < 0.0001)
+    @Test func cpuPercentHalfCore() {
+        // 0.5s cpu over 1s wall = 50% of one core
+        let p = AgentSessionMonitor.cpuPercentOfCore(deltaCpuNs: 0.5e9, elapsedNs: 1e9)
+        #expect(abs(p - 50) < 0.0001)
     }
 
     @Test func cpuPercentZeroElapsedReturnsZero() {
-        #expect(AgentSessionMonitor.cpuPercentOfTotal(deltaCpuNs: 1e9, elapsedNs: 0, cpuCount: 8) == 0)
+        #expect(AgentSessionMonitor.cpuPercentOfCore(deltaCpuNs: 1e9, elapsedNs: 0) == 0)
     }
 
-    @Test func cpuPercentZeroCoresReturnsZero() {
-        #expect(AgentSessionMonitor.cpuPercentOfTotal(deltaCpuNs: 1e9, elapsedNs: 1e9, cpuCount: 0) == 0)
+    @Test func cpuPercentCanExceedHundred() {
+        // two cores' worth of cpu time over the interval = 200%
+        let p = AgentSessionMonitor.cpuPercentOfCore(deltaCpuNs: 2e9, elapsedNs: 1e9)
+        #expect(abs(p - 200) < 0.0001)
     }
 
     // MARK: - aggregate

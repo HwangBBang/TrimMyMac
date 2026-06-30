@@ -15,8 +15,8 @@ public enum AgentKind: String, Sendable, CaseIterable {
 }
 
 /// One detected agent session = a root agent process plus its descendant tree
-/// (cut where another agent root begins). CPU is whole-percent of total machine
-/// capacity (comparable to the global CPU metric); memory is summed resident bytes.
+/// (cut where another agent root begins). CPU is percent of a single core
+/// (Activity Monitor style; can exceed 100); memory is summed resident bytes.
 public struct AgentSession: Sendable, Identifiable {
     public let id: Int32          // root pid
     public let kind: AgentKind
@@ -78,12 +78,13 @@ public final class AgentSessionMonitor: ObservableObject {
         return nil
     }
 
-    /// CPU as whole-percent of TOTAL machine capacity (100 == all cores busy), so a
-    /// session's value is directly comparable to the global CPU metric. Returns 0 if
-    /// no time elapsed (first sample) or inputs are non-positive.
-    nonisolated static func cpuPercentOfTotal(deltaCpuNs: Double, elapsedNs: Double, cpuCount: Int) -> Double {
-        guard elapsedNs > 0, cpuCount > 0 else { return 0 }
-        return max(0, deltaCpuNs / (elapsedNs * Double(cpuCount)) * 100)
+    /// CPU as percent of a SINGLE core (Activity Monitor style): a busy multi-threaded
+    /// session can exceed 100. Dividing by core count instead makes per-session usage
+    /// round to ~0 (one session rarely uses a big fraction of ALL cores), which reads
+    /// as "not tracking". Returns 0 if no time elapsed (first sample).
+    nonisolated static func cpuPercentOfCore(deltaCpuNs: Double, elapsedNs: Double) -> Double {
+        guard elapsedNs > 0 else { return 0 }
+        return max(0, deltaCpuNs / elapsedNs * 100)
     }
 
     /// Sums each agent root's process subtree (cpu + rss), cutting the traversal
@@ -215,7 +216,6 @@ public final class AgentSessionMonitor: ObservableObject {
     public func sample(enabled: Set<AgentKind> = Set(AgentKind.allCases)) {
         let now = Date().timeIntervalSinceReferenceDate
         let elapsedNs = prevTime.map { (now - $0) * 1_000_000_000 } ?? 0
-        let cpuCount = ProcessInfo.processInfo.activeProcessorCount
 
         let procs = Self.enumerateUserProcesses()
         var ppidByPid: [Int32: Int32] = [:]
@@ -271,7 +271,7 @@ public final class AgentSessionMonitor: ObservableObject {
             } else {
                 deltaNs = 0   // first sighting or counter reset → no CPU this round
             }
-            let cpu = Self.cpuPercentOfTotal(deltaCpuNs: deltaNs, elapsedNs: elapsedNs, cpuCount: cpuCount)
+            let cpu = Self.cpuPercentOfCore(deltaCpuNs: deltaNs, elapsedNs: elapsedNs)
             records.append(ProcRecord(pid: pid, ppid: ppidByPid[pid] ?? 0,
                                       kind: kindByPid[pid], cpu: cpu, rss: info.rss))
         }
