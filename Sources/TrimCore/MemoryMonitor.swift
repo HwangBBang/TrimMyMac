@@ -40,6 +40,9 @@ public struct MemorySample: Sendable {
 @MainActor
 public final class MemoryMonitor: ObservableObject {
     @Published public private(set) var latest: MemorySample?
+    @Published public private(set) var history: [PressureSample] = []
+    /// Default retention window for the sparkline / sustained-critical check.
+    public static let historyWindow: TimeInterval = 120
 
     private var pressureSource: DispatchSourceMemoryPressure?
     private var onChangeHandler: ((MemoryPressure) -> Void)?
@@ -47,6 +50,50 @@ public final class MemoryMonitor: ObservableObject {
     private let monitorQueue = DispatchQueue(label: "com.trimmymac.memorymonitor", qos: .utility)
 
     public init() {}
+
+    // MARK: - Pressure/swap history (pure, testable)
+
+    public struct PressureSample: Sendable, Equatable {
+        public let time: Date
+        public let pressure: MemoryPressure
+        public let swapUsed: UInt64
+        public let usedRatio: Double
+        public init(time: Date, pressure: MemoryPressure, swapUsed: UInt64, usedRatio: Double) {
+            self.time = time; self.pressure = pressure; self.swapUsed = swapUsed; self.usedRatio = usedRatio
+        }
+    }
+
+    /// Drops samples older than `window` seconds before `now`.
+    nonisolated public static func trimmed(_ samples: [PressureSample],
+                                           keeping window: TimeInterval,
+                                           now: Date) -> [PressureSample] {
+        let cutoff = now.addingTimeInterval(-window)
+        return samples.filter { $0.time >= cutoff }
+    }
+
+    /// True only if every sample within `window` is `.critical`, the samples actually
+    /// span the window, and no consecutive gap exceeds `maxGap` (rejects sleep/timer pauses).
+    ///
+    /// The filter retains samples slightly older than `window` (by a 1.5 s slack) so that
+    /// fractional real-clock values — where the timer fires at e.g. `now = t0 + 120.3` and
+    /// the strict cutoff `now − 120 = t0 + 0.3` would trim the boundary sample — do not
+    /// produce false negatives. The span guard still requires full `window` coverage.
+    nonisolated public static func sustainedCritical(_ samples: [PressureSample],
+                                                     now: Date,
+                                                     window: TimeInterval,
+                                                     maxGap: TimeInterval) -> Bool {
+        // 1.5 s slack absorbs fractional-clock jitter; much smaller than the smallest
+        // expected sample interval (1 s) so it cannot include a full extra sample period.
+        let cutoff = now.addingTimeInterval(-(window + 1.5))
+        let recent = samples.filter { $0.time >= cutoff }.sorted { $0.time < $1.time }
+        guard let first = recent.first, recent.count >= 2 else { return false }
+        guard now.timeIntervalSince(first.time) >= window else { return false }
+        guard recent.allSatisfy({ $0.pressure == .critical }) else { return false }
+        for i in 1..<recent.count where recent[i].time.timeIntervalSince(recent[i-1].time) > maxGap {
+            return false
+        }
+        return true
+    }
 
     // MARK: - Pure, testable helpers (nonisolated so unit tests call them synchronously)
 
@@ -140,6 +187,16 @@ public final class MemoryMonitor: ObservableObject {
             pressure: latestPressure)
         latest = result
         return result
+    }
+
+    /// Appends a history point from the latest sample. Call from the single 1 s sampler only.
+    public func appendHistory(now: Date = Date()) {
+        guard let s = latest else { return }
+        let ratio = s.total > 0 ? Double(s.used) / Double(s.total) : 0
+        let point = PressureSample(time: now, pressure: s.pressure, swapUsed: s.swapUsed, usedRatio: ratio)
+        // Retain 5 s beyond the check window so boundary samples are still present when
+        // sustainedCritical is called fractionally after the last appendHistory trim.
+        history = Self.trimmed(history + [point], keeping: Self.historyWindow + 5.0, now: now)
     }
 
     // MARK: - Pressure monitoring

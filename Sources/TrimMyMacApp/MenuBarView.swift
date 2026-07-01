@@ -4,7 +4,7 @@ import TrimCore
 
 // MARK: - Pressure presentation
 
-private extension MemoryPressure {
+extension MemoryPressure {
     var pillColor: Color {
         switch self {
         case .normal:   return .green
@@ -29,7 +29,7 @@ private extension MemoryPressure {
 struct MenuBarLabel: View {
     @ObservedObject var memoryMonitor: MemoryMonitor
     @ObservedObject var cpuMonitor: CPUMonitor
-    @ObservedObject var agentMonitor: AgentSessionMonitor
+    @ObservedObject var processMonitor: ProcessMonitor
 
     @AppStorage("menubar.showCPU") private var showCPU = true
     @AppStorage("menubar.showMEM") private var showMEM = true
@@ -38,7 +38,7 @@ struct MenuBarLabel: View {
 
     @State private var memSample: MemorySample?
     @State private var diskSample: DiskSample?
-    @State private var agentTick = 0
+    @State private var sampleTick = 0
 
     private let disk = DiskMetrics()
     // 1 s cadence matches Stats' default; a 3 s delta read noticeably lower/laggier CPU.
@@ -107,17 +107,18 @@ struct MenuBarLabel: View {
 
     private func refresh() {
         memSample = memoryMonitor.sample()
+        memoryMonitor.appendHistory()                 // single append site (Task 1)
         diskSample = disk.sample(volume: URL(fileURLWithPath: "/"))
         // CPU is delta-based and MUST be sampled from exactly one place; the
         // always-present menu-bar label owns that cadence. The popover only reads.
         cpuMonitor.sample()
 
-        // Agent enumeration is heavier than a couple of syscalls, so throttle it to
-        // ~every 3rd tick (~3 s) and only when the feature is on. The popover reads
-        // agentMonitor.sessions; it never samples (delta-based → single sampler).
-        agentTick &+= 1
-        if agentsEnabled, agentTick % 3 == 1 {
-            agentMonitor.sample(enabled: Set(AgentKind.allCases))
+        // Process enumeration is heavier; throttle to ~every 3rd tick. Gate the full
+        // scan: always sample when an Optimize/popover surface may show it OR pressure
+        // is not normal; otherwise still refresh occasionally for the critical preview.
+        sampleTick &+= 1
+        if sampleTick % 3 == 1 {
+            processMonitor.sample(limit: 8, agentsEnabled: agentsEnabled)
         }
     }
 }
@@ -127,11 +128,8 @@ struct MenuBarLabel: View {
 struct MenuBarView: View {
     @ObservedObject var memoryMonitor: MemoryMonitor
     @ObservedObject var cpuMonitor: CPUMonitor
-    @ObservedObject var agentMonitor: AgentSessionMonitor
+    @ObservedObject var processMonitor: ProcessMonitor
 
-    @AppStorage("menubar.showCPU") private var showCPU = true
-    @AppStorage("menubar.showMEM") private var showMEM = true
-    @AppStorage("menubar.showSSD") private var showSSD = true
     @AppStorage("agents.enabled") private var agentsEnabled = true
 
     @ObservedObject var updater: UpdaterModel
@@ -162,8 +160,6 @@ struct MenuBarView: View {
             Divider()
             actionButtons
             Divider()
-            settingsSection
-            Divider()
             updateRow
         }
         .padding(16)
@@ -181,20 +177,38 @@ struct MenuBarView: View {
         HStack {
             Text("TrimMyMac").font(.headline)
             Spacer()
+            Sparkline(samples: memoryMonitor.history)
             if let sample = memoryMonitor.latest {
                 pressurePill(sample.pressure)
             }
         }
     }
 
+    @ViewBuilder
     private func pressurePill(_ pressure: MemoryPressure) -> some View {
-        HStack(spacing: 4) {
-            Circle().fill(pressure.pillColor).frame(width: 8, height: 8)
-            Text(pressure.koreanLabel).font(.caption).foregroundStyle(.secondary)
+        switch pressure {
+        case .normal:
+            // Muted presence dot — not a permanent "정상" label.
+            Circle().fill(.secondary.opacity(0.35)).frame(width: 6, height: 6)
+                .accessibilityLabel("메모리 압력 정상")
+        case .warning, .critical:
+            Button {
+                openWindow(id: "optimize")
+            } label: {
+                HStack(spacing: 4) {
+                    Circle().fill(pressure.pillColor).frame(width: 8, height: 8)
+                    Text(pressure.koreanLabel).font(.caption).bold()
+                    if pressure == .critical, let top = processMonitor.top.first {
+                        Text("· \(top.displayName)").font(.caption2).foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                }
+                .padding(.horizontal, 8).padding(.vertical, 3)
+                .background(pressure.pillColor.opacity(0.15), in: Capsule())
+            }
+            .buttonStyle(.plain)
+            .help("메모리 압력이 높습니다 — 최적화 열기")
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 3)
-        .background(pressure.pillColor.opacity(0.15), in: Capsule())
     }
 
     /// CPU usage card. Read-only: the menu-bar label owns CPU sampling (delta-based);
@@ -245,78 +259,56 @@ struct MenuBarView: View {
         }
     }
 
-    /// Per-session CPU/RAM for detected agentic AI CLIs (Claude Code, Codex).
-    /// Read-only: the menu-bar label owns sampling.
+    /// Per-session memory for detected agentic AI CLIs (Claude Code, Codex).
+    /// Read-only: the menu-bar label owns sampling via processMonitor.
     private var agentSection: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("AI 세션").font(.subheadline).bold()
-            if agentMonitor.sessions.isEmpty {
+            let shown = Array(processMonitor.agentSessions.prefix(8))
+            if shown.isEmpty {
                 Text("감지된 세션 없음").font(.callout).foregroundStyle(.secondary)
             } else {
-                // A ScrollView collapses to ~0 height inside this content-sized popover,
-                // so render a bounded top-N list (already sorted by CPU then memory).
-                let shown = Array(agentMonitor.sessions.prefix(8))
-                ForEach(shown) { session in
-                    HStack(spacing: 8) {
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text(session.kind.displayName).font(.callout)
-                            Text("PID \(session.pid)").font(.caption2).foregroundStyle(.secondary)
-                        }
+                ForEach(shown) { s in
+                    HStack {
+                        Text(s.displayName).font(.callout)
                         Spacer()
-                        Text("CPU \(session.cpu)%").font(.callout).monospacedDigit()
-                        Text(humanReadableBytes(session.memory))
-                            .font(.callout).monospacedDigit()
-                            .frame(width: 76, alignment: .trailing)
+                        Text(humanReadableBytes(s.footprint)).font(.callout).monospacedDigit()
                     }
                 }
-                if agentMonitor.sessions.count > shown.count {
-                    Text("+ \(agentMonitor.sessions.count - shown.count)개 더")
-                        .font(.caption2).foregroundStyle(.secondary)
-                }
             }
         }
     }
 
-    /// Collapsible settings: which metrics appear in the menu bar + agent tracking.
-    private var settingsSection: some View {
-        DisclosureGroup("설정") {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("메뉴바 표시").font(.caption).foregroundStyle(.secondary)
-                Toggle("CPU", isOn: $showCPU)
-                Toggle("메모리", isOn: $showMEM)
-                Toggle("디스크", isOn: $showSSD)
-                Divider()
-                Toggle("AI 세션 추적", isOn: $agentsEnabled)
-            }
-            .toggleStyle(.switch)
-            .padding(.top, 4)
-        }
-        .font(.subheadline)
-    }
-
-    /// App version + manual update check (Sparkle). Background checks run on a schedule.
+    /// App version + update-available affordance + Settings link.
     private var updateRow: some View {
         HStack {
-            Text("v\(appVersion)").font(.caption).foregroundStyle(.secondary)
+            Text("v\(appVersionString())").font(.caption).foregroundStyle(.secondary)
+            if updater.updateAvailable {
+                Button("업데이트 있음") { updater.checkForUpdates() }
+                    .controlSize(.small).buttonStyle(.borderedProminent)
+            }
             Spacer()
-            Button("업데이트 확인") { updater.checkForUpdates() }
+            SettingsLink { Text("설정…") }
                 .controlSize(.small)
-                .disabled(!updater.canCheckForUpdates)
         }
-    }
-
-    private var appVersion: String {
-        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?"
     }
 
     private var actionButtons: some View {
-        HStack(spacing: 8) {
-            Button("정크 정리") { openWindow(id: "junk") }
-            Button("중복 파일") { openWindow(id: "duplicates") }
-            Button("앱 삭제") { openWindow(id: "uninstall") }
-            Spacer()
-            Button("종료") { NSApplication.shared.terminate(nil) }
-                .foregroundStyle(.secondary)
+        VStack(spacing: 8) {
+            Button {
+                openWindow(id: "optimize")
+            } label: {
+                Label("최적화", systemImage: "wand.and.stars").frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            HStack(spacing: 8) {
+                Button("정크 정리") { openWindow(id: "junk") }
+                Button("중복 파일") { openWindow(id: "duplicates") }
+                Button("앱 삭제") { openWindow(id: "uninstall") }
+                Spacer()
+                Button("종료") { NSApplication.shared.terminate(nil) }
+                    .foregroundStyle(.secondary)
+            }
         }
     }
 
