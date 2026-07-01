@@ -23,7 +23,7 @@ struct SettingsView: View {
             .tabItem { Label("일반", systemImage: "gearshape") }
 
             Form {
-                LabeledContent("버전", value: appVersion)
+                LabeledContent("버전", value: appVersionString())
                 Button("업데이트 확인") { updater.checkForUpdates() }
                     .disabled(!updater.canCheckForUpdates)
             }
@@ -32,7 +32,4 @@ struct SettingsView: View {
         .frame(width: 360, height: 240)
     }
 
-    private var appVersion: String {
-        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?"
-    }
 }

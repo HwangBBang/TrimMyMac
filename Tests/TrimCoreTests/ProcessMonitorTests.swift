@@ -51,4 +51,41 @@ struct ProcessMonitorTests {
         #expect(m.top.count <= 8)
         for u in m.top { #expect(u.footprint > 0) }
     }
+
+    // MARK: - aggregateAgentTrees (TDD: tests written before the helper exists)
+
+    @Test func aggregateAgentTreesSumsSubtree() {
+        typealias Rec = ProcessMonitor.AgentRecord
+        let records: [Rec] = [
+            Rec(pid: 100, ppid: 1,   kind: .claudeCode, footprint: 1000),
+            Rec(pid: 101, ppid: 100, kind: nil,          footprint: 500),
+            Rec(pid: 102, ppid: 101, kind: nil,          footprint: 200),
+            Rec(pid: 200, ppid: 1,   kind: nil,          footprint: 9000), // unrelated; no kind → not a root
+        ]
+        let sessions = ProcessMonitor.aggregateAgentTrees(records)
+        #expect(sessions.count == 1)
+        #expect(sessions[0].id == "pid:100")
+        #expect(sessions[0].displayName == "Claude Code")
+        #expect(sessions[0].kind == .agent)
+        #expect(sessions[0].footprint == 1700) // 1000 + 500 + 200; pid 200 excluded (no kind → not in tree)
+    }
+
+    @Test func aggregateAgentTreesCutsAtNestedRoot() {
+        typealias Rec = ProcessMonitor.AgentRecord
+        // 100 (claude) → 101 (helper) → 102 (codex root) → 103 (codex helper)
+        let records: [Rec] = [
+            Rec(pid: 100, ppid: 1,   kind: .claudeCode, footprint: 1000),
+            Rec(pid: 101, ppid: 100, kind: nil,          footprint: 100),
+            Rec(pid: 102, ppid: 101, kind: .codex,       footprint: 2000),
+            Rec(pid: 103, ppid: 102, kind: nil,          footprint: 500),
+        ]
+        let sessions = ProcessMonitor.aggregateAgentTrees(records)
+        #expect(sessions.count == 2)
+        let claude = sessions.first { $0.displayName == "Claude Code" }!
+        let codex  = sessions.first { $0.displayName == "Codex" }!
+        // Claude subtree: 100 + 101 only — cut at 102 (nested Codex root)
+        #expect(claude.footprint == 1100)
+        // Codex subtree: 102 + 103
+        #expect(codex.footprint == 2500)
+    }
 }

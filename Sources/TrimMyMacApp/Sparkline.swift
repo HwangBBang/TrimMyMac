@@ -6,17 +6,17 @@ struct Sparkline: View {
     let samples: [MemoryMonitor.PressureSample]
     var body: some View {
         GeometryReader { geo in
-            let pts = samples
             Path { path in
-                guard pts.count >= 2 else {
+                guard samples.count >= 2 else {
                     let y = geo.size.height * 0.9
                     path.move(to: CGPoint(x: 0, y: y))
                     path.addLine(to: CGPoint(x: geo.size.width, y: y))
                     return
                 }
-                let maxR = max(pts.map(\.usedRatio).max() ?? 1, 0.0001)
-                for (i, s) in pts.enumerated() {
-                    let x = geo.size.width * CGFloat(i) / CGFloat(pts.count - 1)
+                // samples is non-empty (≥ 2) so .max() is always non-nil here.
+                let maxR = max(samples.map(\.usedRatio).max()!, 0.0001)
+                for (i, s) in samples.enumerated() {
+                    let x = geo.size.width * CGFloat(i) / CGFloat(samples.count - 1)
                     let y = geo.size.height * (1 - CGFloat(s.usedRatio / maxR))
                     if i == 0 { path.move(to: CGPoint(x: x, y: y)) }
                     else { path.addLine(to: CGPoint(x: x, y: y)) }

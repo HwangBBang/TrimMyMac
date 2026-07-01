@@ -73,11 +73,18 @@ public final class MemoryMonitor: ObservableObject {
 
     /// True only if every sample within `window` is `.critical`, the samples actually
     /// span the window, and no consecutive gap exceeds `maxGap` (rejects sleep/timer pauses).
+    ///
+    /// The filter retains samples slightly older than `window` (by a 1.5 s slack) so that
+    /// fractional real-clock values — where the timer fires at e.g. `now = t0 + 120.3` and
+    /// the strict cutoff `now − 120 = t0 + 0.3` would trim the boundary sample — do not
+    /// produce false negatives. The span guard still requires full `window` coverage.
     nonisolated public static func sustainedCritical(_ samples: [PressureSample],
                                                      now: Date,
                                                      window: TimeInterval,
                                                      maxGap: TimeInterval) -> Bool {
-        let cutoff = now.addingTimeInterval(-window)
+        // 1.5 s slack absorbs fractional-clock jitter; much smaller than the smallest
+        // expected sample interval (1 s) so it cannot include a full extra sample period.
+        let cutoff = now.addingTimeInterval(-(window + 1.5))
         let recent = samples.filter { $0.time >= cutoff }.sorted { $0.time < $1.time }
         guard let first = recent.first, recent.count >= 2 else { return false }
         guard now.timeIntervalSince(first.time) >= window else { return false }
@@ -187,7 +194,9 @@ public final class MemoryMonitor: ObservableObject {
         guard let s = latest else { return }
         let ratio = s.total > 0 ? Double(s.used) / Double(s.total) : 0
         let point = PressureSample(time: now, pressure: s.pressure, swapUsed: s.swapUsed, usedRatio: ratio)
-        history = Self.trimmed(history + [point], keeping: Self.historyWindow, now: now)
+        // Retain 5 s beyond the check window so boundary samples are still present when
+        // sustainedCritical is called fractionally after the last appendHistory trim.
+        history = Self.trimmed(history + [point], keeping: Self.historyWindow + 5.0, now: now)
     }
 
     // MARK: - Pressure monitoring

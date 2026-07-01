@@ -56,4 +56,14 @@ struct MemoryHistoryTests {
                                                  window: 120, maxGap: 15)
         #expect(ok == false)   // oldest recent sample only 10s before now, < 120s window
     }
+
+    @Test func sustainedCriticalTrueWithFractionalNow() {
+        // 10 s-spaced critical samples spanning exactly 120 s; 'now' is 0.3 s past the boundary.
+        // A strict cutoff (now − 120 = t0 + 0.3) would drop the t0 sample, leaving only 110.3 s
+        // of span and causing a false negative. The fix must absorb this fractional-clock jitter.
+        let samples = (0...12).map { sample(Double($0) * 10, .critical) } // t0, t0+10, …, t0+120
+        let now = t0.addingTimeInterval(120.3)
+        let ok = MemoryMonitor.sustainedCritical(samples, now: now, window: 120, maxGap: 15)
+        #expect(ok == true)
+    }
 }

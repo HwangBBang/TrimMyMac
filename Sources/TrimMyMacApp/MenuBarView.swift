@@ -38,7 +38,7 @@ struct MenuBarLabel: View {
 
     @State private var memSample: MemorySample?
     @State private var diskSample: DiskSample?
-    @State private var agentTick = 0
+    @State private var sampleTick = 0
 
     private let disk = DiskMetrics()
     // 1 s cadence matches Stats' default; a 3 s delta read noticeably lower/laggier CPU.
@@ -116,8 +116,8 @@ struct MenuBarLabel: View {
         // Process enumeration is heavier; throttle to ~every 3rd tick. Gate the full
         // scan: always sample when an Optimize/popover surface may show it OR pressure
         // is not normal; otherwise still refresh occasionally for the critical preview.
-        agentTick &+= 1
-        if agentTick % 3 == 1 {
+        sampleTick &+= 1
+        if sampleTick % 3 == 1 {
             processMonitor.sample(limit: 8, agentsEnabled: agentsEnabled)
         }
     }
@@ -282,7 +282,7 @@ struct MenuBarView: View {
     /// App version + update-available affordance + Settings link.
     private var updateRow: some View {
         HStack {
-            Text("v\(appVersion)").font(.caption).foregroundStyle(.secondary)
+            Text("v\(appVersionString())").font(.caption).foregroundStyle(.secondary)
             if updater.updateAvailable {
                 Button("업데이트 있음") { updater.checkForUpdates() }
                     .controlSize(.small).buttonStyle(.borderedProminent)
@@ -291,10 +291,6 @@ struct MenuBarView: View {
             SettingsLink { Text("설정…") }
                 .controlSize(.small)
         }
-    }
-
-    private var appVersion: String {
-        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?"
     }
 
     private var actionButtons: some View {
