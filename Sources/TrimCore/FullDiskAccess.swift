@@ -49,3 +49,39 @@ public enum FullDiskAccessClassifier {
         }
     }
 }
+
+/// Three-state Full Disk Access result. `unknown` is never treated as `granted`,
+/// so a genuinely-denied user whose probe returns an unexpected error is not hidden.
+public enum FullDiskAccessStatus: Equatable, Sendable {
+    case granted, denied, unknown
+
+    /// Maps a probe read outcome to a status:
+    /// nil error → granted; a permission wall (EPERM/EACCES/Cocoa no-permission) → denied;
+    /// anything else (e.g. ENOENT) → unknown. We never guess `granted` from an error.
+    public static func from(probeError error: Error?) -> FullDiskAccessStatus {
+        guard let error else { return .granted }
+        return FullDiskAccessClassifier.needsFullDiskAccess(for: error) ? .denied : .unknown
+    }
+}
+
+/// What the popover should render for a given FDA status.
+public enum FDAAffordance: Equatable, Sendable {
+    case strip      // denied: amber "디스크 기능 제한" + [켜기]
+    case quietLink  // unknown: no-alarm "설정 열기" link
+    case hidden     // granted: nothing
+}
+
+/// Pure UI-gating decisions for Full Disk Access.
+public enum FullDiskAccessGate {
+    /// Onboarding shows once, only when denial is positively confirmed.
+    public static func shouldShowOnboarding(seen: Bool, status: FullDiskAccessStatus) -> Bool {
+        !seen && status == .denied
+    }
+    public static func affordance(for status: FullDiskAccessStatus) -> FDAAffordance {
+        switch status {
+        case .denied:  return .strip
+        case .unknown: return .quietLink
+        case .granted: return .hidden
+        }
+    }
+}
