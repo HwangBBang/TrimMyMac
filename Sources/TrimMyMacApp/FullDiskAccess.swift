@@ -25,19 +25,26 @@ enum FullDiskAccessProbe {
     }
 }
 
+/// Namespaced UserDefaults keys for FDA onboarding, shared between `OnboardingView`
+/// (writer) and `MenuBarView` (reader) so a typo in either can't silently break the
+/// once-only onboarding guarantee.
+enum FDADefaultsKey {
+    static let onboardingSeen = "onboarding.fdaSeen"
+}
+
 /// Shared, always-current FDA status for the popover affordance + onboarding gate.
 /// Follows the app's monitor pattern (MemoryMonitor/ProcessMonitor/UpdaterModel).
 @MainActor
 final class FullDiskAccessModel: ObservableObject {
     @Published private(set) var status: FullDiskAccessStatus
-    /// In-memory per-launch guard so onAppear/didBecomeActive can't open onboarding twice.
-    @Published var onboardingRequestedThisLaunch = false
+    /// In-memory per-launch guard so a re-entered popover onAppear can't open onboarding twice.
+    var onboardingRequestedThisLaunch = false
 
     private let probe: () -> FullDiskAccessStatus
 
     init(probe: @escaping () -> FullDiskAccessStatus = FullDiskAccessProbe.system) {
         self.probe = probe
-        self.status = probe()   // synchronous initial state — no default-false race
+        self.status = probe()  // synchronous initial state — no default-false race
     }
 
     func refresh() { status = probe() }
@@ -108,6 +115,6 @@ struct OnboardingView: View {
         }
         .padding(24)
         .frame(width: 400)
-        .onAppear { UserDefaults.standard.set(true, forKey: "onboarding.fdaSeen") }
+        .onAppear { UserDefaults.standard.set(true, forKey: FDADefaultsKey.onboardingSeen) }
     }
 }

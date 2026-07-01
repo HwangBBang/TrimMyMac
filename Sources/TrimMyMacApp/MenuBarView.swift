@@ -138,7 +138,7 @@ struct MenuBarView: View {
 
     @ObservedObject var updater: UpdaterModel
     @ObservedObject var fdaModel: FullDiskAccessModel
-    @AppStorage("onboarding.fdaSeen") private var fdaSeen = false
+    @AppStorage(FDADefaultsKey.onboardingSeen) private var fdaSeen = false
 
     // Memory is read directly from memoryMonitor.latest (single source of truth).
     // Disk (not owned by MemoryMonitor) stays in local @State.
