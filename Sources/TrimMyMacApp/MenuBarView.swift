@@ -182,6 +182,7 @@ struct MenuBarView: View {
         HStack {
             Text("TrimMyMac").font(.headline)
             Spacer()
+            Sparkline(samples: memoryMonitor.history)
             if let sample = memoryMonitor.latest {
                 pressurePill(sample.pressure)
             }
