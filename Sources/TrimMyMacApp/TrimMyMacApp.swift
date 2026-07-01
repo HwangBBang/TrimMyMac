@@ -33,5 +33,10 @@ struct TrimMyMacApp: App {
             UninstallPanel()
         }
         .windowResizability(.contentSize)
+
+        Window("최적화", id: "optimize") {
+            OptimizePanel(memoryMonitor: memoryMonitor, processMonitor: processMonitor)
+        }
+        .windowResizability(.contentSize)
     }
 }

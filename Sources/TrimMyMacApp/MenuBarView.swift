@@ -4,7 +4,7 @@ import TrimCore
 
 // MARK: - Pressure presentation
 
-private extension MemoryPressure {
+extension MemoryPressure {
     var pillColor: Color {
         switch self {
         case .normal:   return .green
@@ -329,13 +329,21 @@ struct MenuBarView: View {
     }
 
     private var actionButtons: some View {
-        HStack(spacing: 8) {
-            Button("정크 정리") { openWindow(id: "junk") }
-            Button("중복 파일") { openWindow(id: "duplicates") }
-            Button("앱 삭제") { openWindow(id: "uninstall") }
-            Spacer()
-            Button("종료") { NSApplication.shared.terminate(nil) }
-                .foregroundStyle(.secondary)
+        VStack(spacing: 8) {
+            Button {
+                openWindow(id: "optimize")
+            } label: {
+                Label("최적화", systemImage: "wand.and.stars").frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            HStack(spacing: 8) {
+                Button("정크 정리") { openWindow(id: "junk") }
+                Button("중복 파일") { openWindow(id: "duplicates") }
+                Button("앱 삭제") { openWindow(id: "uninstall") }
+                Spacer()
+                Button("종료") { NSApplication.shared.terminate(nil) }
+                    .foregroundStyle(.secondary)
+            }
         }
     }
 
