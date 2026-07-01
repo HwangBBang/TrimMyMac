@@ -1,4 +1,5 @@
 import Testing
+import Foundation
 @testable import TrimCore
 
 @Suite("ProcessMonitor")
@@ -87,5 +88,40 @@ struct ProcessMonitorTests {
         #expect(claude.footprint == 1100)
         // Codex subtree: 102 + 103
         #expect(codex.footprint == 2500)
+    }
+
+    // MARK: - Per-session identity (TDD: tests written before the helpers exist)
+    // Concurrent same-kind sessions must be distinguishable; the project directory
+    // (cwd) is the primary human-facing distinguisher, pid the guaranteed fallback.
+
+    @Test func projectNameTakesLastPathComponent() {
+        #expect(ProcessMonitor.projectName(fromCwd: "/Users/x/side-workspace/trim-my-mac") == "trim-my-mac")
+    }
+
+    @Test func projectNameStripsTrailingSlash() {
+        #expect(ProcessMonitor.projectName(fromCwd: "/Users/x/proj/") == "proj")
+    }
+
+    @Test func projectNameRootOrEmptyIsNil() {
+        #expect(ProcessMonitor.projectName(fromCwd: "/") == nil)
+        #expect(ProcessMonitor.projectName(fromCwd: "") == nil)
+    }
+
+    @Test func agentLabelUsesProjectWhenPresent() {
+        #expect(ProcessMonitor.agentSessionLabel(baseName: "Claude Code", projectName: "trim-my-mac", pid: 42)
+                == "Claude Code · trim-my-mac")
+    }
+
+    @Test func agentLabelFallsBackToPidWhenNoProject() {
+        #expect(ProcessMonitor.agentSessionLabel(baseName: "Codex", projectName: nil, pid: 4242)
+                == "Codex · pid 4242")
+        #expect(ProcessMonitor.agentSessionLabel(baseName: "Codex", projectName: "", pid: 4242)
+                == "Codex · pid 4242")
+    }
+
+    @Test func processCwdForSelfIsAbsolutePath() {
+        let cwd = ProcessMonitor.processCwd(ProcessInfo.processInfo.processIdentifier)
+        #expect(cwd != nil)
+        #expect(cwd?.hasPrefix("/") == true)
     }
 }

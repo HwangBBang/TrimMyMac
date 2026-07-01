@@ -66,6 +66,23 @@ extension ProcessMonitor {
         ]
         return known.contains(comm)
     }
+
+    /// Last path component of a working directory, or nil for root/empty — used as the
+    /// human-facing project name that distinguishes concurrent agent sessions.
+    nonisolated public static func projectName(fromCwd cwd: String) -> String? {
+        let trimmed = cwd.hasSuffix("/") ? String(cwd.dropLast()) : cwd
+        guard !trimmed.isEmpty, trimmed != "/" else { return nil }
+        let last = (trimmed as NSString).lastPathComponent
+        return last.isEmpty || last == "/" ? nil : last
+    }
+
+    /// Composes an agent-session row label: "<kind> · <project>" when the working
+    /// directory is known, else "<kind> · pid <n>" so two same-kind sessions never
+    /// render as identical rows.
+    nonisolated public static func agentSessionLabel(baseName: String, projectName: String?, pid: Int32) -> String {
+        if let p = projectName, !p.isEmpty { return "\(baseName) · \(p)" }
+        return "\(baseName) · pid \(pid)"
+    }
 }
 
 @MainActor
@@ -133,6 +150,19 @@ extension ProcessMonitor {
         return info.ri_phys_footprint
     }
 
+    /// Current working directory of a same-uid pid via PROC_PIDVNODEPATHINFO, or nil.
+    /// One syscall; used to label an agent session by the project it is working in.
+    nonisolated public static func processCwd(_ pid: Int32) -> String? {
+        var info = proc_vnodepathinfo()
+        let size = Int32(MemoryLayout<proc_vnodepathinfo>.size)
+        let rc = proc_pidinfo(pid, PROC_PIDVNODEPATHINFO, 0, &info, size)
+        guard rc == size else { return nil }
+        let path = withUnsafeBytes(of: &info.pvi_cdir.vip_path) { raw -> String in
+            String(cString: raw.bindMemory(to: CChar.self).baseAddress!)
+        }
+        return path.isEmpty ? nil : path
+    }
+
     /// Single enumeration pass. Builds top consumers (apps + agents + notable bare
     /// processes) by phys_footprint, plus an agent-only projection. Agent sessions are
     /// aggregated as one row per root process (subtree footprint summed, cut at nested
@@ -189,7 +219,20 @@ extension ProcessMonitor {
             agentRecords.append(AgentRecord(pid: pid, ppid: ppidByPid[pid] ?? 0,
                                             kind: kindByPid[pid], footprint: fp))
         }
-        let aggregatedAgents = Self.aggregateAgentTrees(agentRecords)
+        let rawAgents = Self.aggregateAgentTrees(agentRecords)
+
+        // Enrich each session with a per-session distinguisher (its project directory)
+        // so concurrent same-kind sessions are legible — "Claude Code · trim-my-mac"
+        // instead of three identical "Claude Code" rows. cwd is one syscall per agent
+        // ROOT (few roots; same-uid already guaranteed); flows to BOTH the popover
+        // AI section and the top-consumers list via the shared displayName.
+        let aggregatedAgents: [ProcessUsage] = rawAgents.map { session in
+            let rootPid = Int32(String(session.id.dropFirst(4))) ?? 0
+            let project = Self.processCwd(rootPid).flatMap { Self.projectName(fromCwd: $0) }
+            let label = Self.agentSessionLabel(baseName: session.displayName, projectName: project, pid: rootPid)
+            return ProcessUsage(id: session.id, displayName: label, bundleID: session.bundleID,
+                                kind: session.kind, footprint: session.footprint, cpu: session.cpu)
+        }
 
         // Build top list: one row per aggregated agent session + apps + bare processes.
         // Agent subtree members are excluded from the app/process pass to avoid double-counting.
