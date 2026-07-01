@@ -40,6 +40,9 @@ public struct MemorySample: Sendable {
 @MainActor
 public final class MemoryMonitor: ObservableObject {
     @Published public private(set) var latest: MemorySample?
+    @Published public private(set) var history: [PressureSample] = []
+    /// Default retention window for the sparkline / sustained-critical check.
+    public static let historyWindow: TimeInterval = 120
 
     private var pressureSource: DispatchSourceMemoryPressure?
     private var onChangeHandler: ((MemoryPressure) -> Void)?
@@ -47,6 +50,43 @@ public final class MemoryMonitor: ObservableObject {
     private let monitorQueue = DispatchQueue(label: "com.trimmymac.memorymonitor", qos: .utility)
 
     public init() {}
+
+    // MARK: - Pressure/swap history (pure, testable)
+
+    public struct PressureSample: Sendable, Equatable {
+        public let time: Date
+        public let pressure: MemoryPressure
+        public let swapUsed: UInt64
+        public let usedRatio: Double
+        public init(time: Date, pressure: MemoryPressure, swapUsed: UInt64, usedRatio: Double) {
+            self.time = time; self.pressure = pressure; self.swapUsed = swapUsed; self.usedRatio = usedRatio
+        }
+    }
+
+    /// Drops samples older than `window` seconds before `now`.
+    nonisolated public static func trimmed(_ samples: [PressureSample],
+                                           keeping window: TimeInterval,
+                                           now: Date) -> [PressureSample] {
+        let cutoff = now.addingTimeInterval(-window)
+        return samples.filter { $0.time >= cutoff }
+    }
+
+    /// True only if every sample within `window` is `.critical`, the samples actually
+    /// span the window, and no consecutive gap exceeds `maxGap` (rejects sleep/timer pauses).
+    nonisolated public static func sustainedCritical(_ samples: [PressureSample],
+                                                     now: Date,
+                                                     window: TimeInterval,
+                                                     maxGap: TimeInterval) -> Bool {
+        let cutoff = now.addingTimeInterval(-window)
+        let recent = samples.filter { $0.time >= cutoff }.sorted { $0.time < $1.time }
+        guard let first = recent.first, recent.count >= 2 else { return false }
+        guard now.timeIntervalSince(first.time) >= window else { return false }
+        guard recent.allSatisfy({ $0.pressure == .critical }) else { return false }
+        for i in 1..<recent.count where recent[i].time.timeIntervalSince(recent[i-1].time) > maxGap {
+            return false
+        }
+        return true
+    }
 
     // MARK: - Pure, testable helpers (nonisolated so unit tests call them synchronously)
 
@@ -140,6 +180,14 @@ public final class MemoryMonitor: ObservableObject {
             pressure: latestPressure)
         latest = result
         return result
+    }
+
+    /// Appends a history point from the latest sample. Call from the single 1 s sampler only.
+    public func appendHistory(now: Date = Date()) {
+        guard let s = latest else { return }
+        let ratio = s.total > 0 ? Double(s.used) / Double(s.total) : 0
+        let point = PressureSample(time: now, pressure: s.pressure, swapUsed: s.swapUsed, usedRatio: ratio)
+        history = Self.trimmed(history + [point], keeping: Self.historyWindow, now: now)
     }
 
     // MARK: - Pressure monitoring
