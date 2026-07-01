@@ -152,9 +152,7 @@ struct DuplicatePanel: View {
                 .font(.callout)
             Spacer()
             Button("권한 설정 열기") {
-                if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles") {
-                    NSWorkspace.shared.open(url)
-                }
+                FullDiskAccessProbe.openSettings()
             }
             .controlSize(.small)
         }

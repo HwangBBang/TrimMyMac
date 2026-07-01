@@ -52,36 +52,32 @@ struct FullDiskAccessSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Label("Full Disk Access Required", systemImage: "lock.shield")
+            Label("전체 디스크 접근 필요", systemImage: "lock.shield")
                 .font(.headline)
 
-            Text("TrimMyMac needs Full Disk Access to scan and clean files under your "
-                 + "~/Library folder. Grant access in System Settings, then return here and retry.")
+            Text("TrimMyMac이 ~/Library 하위 파일을 스캔·정리하려면 전체 디스크 접근이 필요합니다. "
+                 + "System Settings에서 켠 뒤 돌아와 다시 시도하세요.")
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
-            Text("System Settings → Privacy & Security → Full Disk Access → enable TrimMyMac.")
+            Text("System Settings → Privacy & Security → Full Disk Access → TrimMyMac 켜기.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+
+            Text("macOS가 요청하면 앱을 다시 열어야 반영될 수 있어요.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
 
             HStack {
-                Button("Open System Settings") { FullDiskAccessSheet.openPrivacySettings() }
+                Button("설정 열기") { FullDiskAccessProbe.openSettings() }
                     .buttonStyle(.borderedProminent)
                 Spacer()
-                Button("Retry") { onRetry() }
-                Button("Close") { onDismiss() }
+                Button("다시 시도") { onRetry() }
+                Button("닫기") { onDismiss() }
             }
         }
         .padding(20)
         .frame(width: 380)
-    }
-
-    /// Deep link to the Full Disk Access pane of Privacy & Security.
-    /// URL: x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles
-    static func openPrivacySettings() {
-        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles") {
-            NSWorkspace.shared.open(url)
-        }
     }
 }
