@@ -30,6 +30,7 @@ struct MenuBarLabel: View {
     @ObservedObject var memoryMonitor: MemoryMonitor
     @ObservedObject var cpuMonitor: CPUMonitor
     @ObservedObject var processMonitor: ProcessMonitor
+    @ObservedObject var fdaModel: FullDiskAccessModel
 
     @AppStorage("menubar.showCPU") private var showCPU = true
     @AppStorage("menubar.showMEM") private var showMEM = true
@@ -63,6 +64,9 @@ struct MenuBarLabel: View {
         }
         .onDisappear { memoryMonitor.stop() }
         .onReceive(tick) { _ in refresh() }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            fdaModel.refresh()
+        }
     }
 
     /// Stats-style stacked metric: small dimmed label on top, larger percentage below.
@@ -133,6 +137,8 @@ struct MenuBarView: View {
     @AppStorage("agents.enabled") private var agentsEnabled = true
 
     @ObservedObject var updater: UpdaterModel
+    @ObservedObject var fdaModel: FullDiskAccessModel
+    @AppStorage("onboarding.fdaSeen") private var fdaSeen = false
 
     // Memory is read directly from memoryMonitor.latest (single source of truth).
     // Disk (not owned by MemoryMonitor) stays in local @State.
@@ -147,6 +153,7 @@ struct MenuBarView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             header
+            fdaAffordance
             Divider()
             cpuRow
             Divider()
@@ -164,7 +171,15 @@ struct MenuBarView: View {
         }
         .padding(16)
         .frame(width: 320)
-        .onAppear(perform: refresh)
+        .onAppear {
+            refresh()
+            fdaModel.refresh()
+            if !fdaModel.onboardingRequestedThisLaunch,
+               FullDiskAccessGate.shouldShowOnboarding(seen: fdaSeen, status: fdaModel.status) {
+                fdaModel.onboardingRequestedThisLaunch = true
+                openWindow(id: "onboarding")
+            }
+        }
         .onReceive(tick) { _ in refresh() }
         // memoryMonitor is @ObservedObject: any @Published change (including $latest
         // from sample() or the pressure callback) automatically triggers re-render.
@@ -181,6 +196,28 @@ struct MenuBarView: View {
             if let sample = memoryMonitor.latest {
                 pressurePill(sample.pressure)
             }
+        }
+    }
+
+    @ViewBuilder
+    private var fdaAffordance: some View {
+        switch FullDiskAccessGate.affordance(for: fdaModel.status) {
+        case .strip:
+            HStack(spacing: 8) {
+                Image(systemName: "lock.shield").foregroundStyle(.orange)
+                Text("전체 디스크 접근 꺼짐 — 디스크 기능 제한").font(.caption)
+                Spacer()
+                Button("켜기") { FullDiskAccessProbe.openSettings() }.controlSize(.small)
+            }
+            .padding(8)
+            .background(.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
+        case .quietLink:
+            Button("전체 디스크 접근 설정 열기") { FullDiskAccessProbe.openSettings() }
+                .buttonStyle(.plain)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        case .hidden:
+            EmptyView()
         }
     }
 

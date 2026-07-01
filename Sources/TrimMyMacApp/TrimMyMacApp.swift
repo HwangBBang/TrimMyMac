@@ -7,14 +7,16 @@ struct TrimMyMacApp: App {
     @StateObject private var cpuMonitor = CPUMonitor()
     @StateObject private var processMonitor = ProcessMonitor()
     @StateObject private var updater = UpdaterModel()
+    @StateObject private var fdaModel = FullDiskAccessModel()
 
     var body: some Scene {
         MenuBarExtra {
             MenuBarView(memoryMonitor: memoryMonitor, cpuMonitor: cpuMonitor,
                         processMonitor: processMonitor,
-                        updater: updater)
+                        updater: updater, fdaModel: fdaModel)
         } label: {
-            MenuBarLabel(memoryMonitor: memoryMonitor, cpuMonitor: cpuMonitor, processMonitor: processMonitor)
+            MenuBarLabel(memoryMonitor: memoryMonitor, cpuMonitor: cpuMonitor,
+                         processMonitor: processMonitor, fdaModel: fdaModel)
         }
         .menuBarExtraStyle(.window)
 
@@ -41,5 +43,10 @@ struct TrimMyMacApp: App {
         Settings {
             SettingsView(updater: updater)
         }
+
+        Window("환영", id: "onboarding") {
+            OnboardingView()
+        }
+        .windowResizability(.contentSize)
     }
 }

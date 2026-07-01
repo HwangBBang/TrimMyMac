@@ -81,3 +81,33 @@ struct FullDiskAccessSheet: View {
         .frame(width: 380)
     }
 }
+
+/// First-popover-open onboarding. Marks `onboarding.fdaSeen` on APPEAR (not on button
+/// click) so closing via X/Cmd-W/quit still counts as shown → shows exactly once.
+@MainActor
+struct OnboardingView: View {
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("TrimMyMac").font(.title2).bold()
+            Text("메모리·CPU·압력 모니터링과 최적화는 지금 바로 동작합니다.")
+                .fixedSize(horizontal: false, vertical: true)
+            Text("정크 정리·중복 파일·앱 삭제처럼 디스크를 뒤지는 기능만 전체 디스크 접근(FDA)이 필요합니다.")
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack {
+                Button("지금 허용") { FullDiskAccessProbe.openSettings(); dismiss() }
+                    .buttonStyle(.borderedProminent)
+                Button("나중에") { dismiss() }
+            }
+            Text("macOS가 요청하면 앱을 다시 열어야 반영될 수 있어요. 나중에 팝오버에서 언제든 켤 수 있어요.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(24)
+        .frame(width: 400)
+        .onAppear { UserDefaults.standard.set(true, forKey: "onboarding.fdaSeen") }
+    }
+}
