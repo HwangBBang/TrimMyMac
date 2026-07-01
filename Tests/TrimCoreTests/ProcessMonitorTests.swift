@@ -44,4 +44,11 @@ struct ProcessMonitorTests {
         #expect(ProcessMonitor.isNoiseDaemon("node") == false)
         #expect(ProcessMonitor.isNoiseDaemon("python3") == false)
     }
+
+    @Test @MainActor func liveSampleDoesNotCrash() {
+        let m = ProcessMonitor()
+        m.sample(limit: 8, agentsEnabled: true)
+        #expect(m.top.count <= 8)
+        for u in m.top { #expect(u.footprint > 0) }
+    }
 }

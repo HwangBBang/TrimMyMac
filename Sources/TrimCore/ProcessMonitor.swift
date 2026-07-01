@@ -1,9 +1,11 @@
 import Foundation
+import AppKit
+import Darwin
 
 public enum ProcessKind: Sendable, Equatable { case app, agent, process }
 
 public struct ProcessUsage: Identifiable, Sendable, Equatable {
-    public let id: String        // app=bundleID, agent/process="pid:<n>"
+    public let id: String        // "bundle:<bundleID>" for apps, "pid:<n>" for agents/processes
     public let displayName: String
     public let bundleID: String?
     public let kind: ProcessKind
@@ -66,11 +68,76 @@ extension ProcessMonitor {
     }
 }
 
-import AppKit
-
 @MainActor
 public final class ProcessMonitor: ObservableObject {
     @Published public private(set) var top: [ProcessUsage] = []
     @Published public private(set) var agentSessions: [ProcessUsage] = []
     public init() {}
+}
+
+extension ProcessMonitor {
+    /// phys_footprint (matches Activity Monitor's Memory column) for a same-uid pid.
+    nonisolated public static func physFootprint(_ pid: Int32) -> UInt64? {
+        var info = rusage_info_v2()
+        let rc = withUnsafeMutablePointer(to: &info) { p -> Int32 in
+            p.withMemoryRebound(to: rusage_info_t?.self, capacity: 1) { reb in
+                proc_pid_rusage(pid, RUSAGE_INFO_V2, reb)
+            }
+        }
+        guard rc == 0 else { return nil }
+        return info.ri_phys_footprint
+    }
+
+    /// Single enumeration pass. Builds top consumers (apps + agents + notable bare
+    /// processes) by phys_footprint, plus an agent-only projection. Heavy work is
+    /// done synchronously here; Task 8 calls this from the 1 s sampler. (A future
+    /// optimization can move collection to a utility queue; v1 keeps it simple but
+    /// gates frequency in Task 8.)
+    public func sample(limit: Int = 8, agentsEnabled: Bool = true) {
+        let procs = AgentSessionMonitor.enumerateUserProcesses()   // same-uid only
+        let pidToApp = Self.appsByPid()                            // pid -> (name, bundleID)
+
+        // Footprint floor so the bare-process view isn't daemon noise.
+        let floor: UInt64 = 200 * 1024 * 1024   // 200 MB
+
+        var raws: [RawProc] = []
+        var agentRaws: [RawProc] = []
+        for pr in procs {
+            guard let fp = Self.physFootprint(pr.pid) else { continue }
+
+            // App?
+            if let app = pidToApp[pr.pid] {
+                raws.append(RawProc(pid: pr.pid, name: app.name, bundleID: app.bundleID, kind: .app, footprint: fp))
+                continue
+            }
+            // Agent? (classify only plausible candidates to stay cheap)
+            let lc = pr.comm.lowercased()
+            let candidate = lc == "claude" || lc == "codex" || lc == "node" || lc == "deno" || lc == "bun"
+                || lc.contains("claude") || lc.contains("codex")
+            if agentsEnabled, candidate,
+               let kind = AgentSessionMonitor.classify(comm: pr.comm, argv: AgentSessionMonitor.processArgs(pr.pid)) {
+                let raw = RawProc(pid: pr.pid, name: kind.displayName, bundleID: nil, kind: .agent, footprint: fp)
+                raws.append(raw); agentRaws.append(raw)
+                continue
+            }
+            // Bare user process: only if notable and not obvious daemon noise.
+            if fp >= floor, !Self.isNoiseDaemon(pr.comm) {
+                raws.append(RawProc(pid: pr.pid, name: pr.comm, bundleID: nil, kind: .process, footprint: fp))
+            }
+        }
+
+        top = Self.topN(Self.aggregate(raws), limit: limit)
+        agentSessions = Self.aggregate(agentRaws).sorted { $0.footprint > $1.footprint }
+    }
+
+    /// Maps each GUI app's pid to its display name + bundleID (regular & accessory apps).
+    nonisolated static func appsByPid() -> [Int32: (name: String, bundleID: String?)] {
+        var out: [Int32: (String, String?)] = [:]
+        for app in NSWorkspace.shared.runningApplications where app.activationPolicy == .regular {
+            let pid = app.processIdentifier
+            guard pid > 0 else { continue }
+            out[pid] = (app.localizedName ?? app.bundleIdentifier ?? "App", app.bundleIdentifier)
+        }
+        return out
+    }
 }
