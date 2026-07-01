@@ -1,5 +1,47 @@
 import SwiftUI
 import AppKit
+import TrimCore
+
+/// Real Full Disk Access probe. Reads a TCC-protected directory present on every Mac
+/// but unreadable without FDA. NON-SANDBOXED LSUIElement app premise: under App Sandbox,
+/// EPERM/EACCES would mean container limits (not FDA) and this must be revisited.
+enum FullDiskAccessProbe {
+    static func system() -> FullDiskAccessStatus {
+        let path = (NSHomeDirectory() as NSString)
+            .appendingPathComponent("Library/Application Support/com.apple.TCC")
+        do {
+            _ = try FileManager.default.contentsOfDirectory(atPath: path)
+            return .granted
+        } catch {
+            return FullDiskAccessStatus.from(probeError: error)
+        }
+    }
+
+    /// Deep link to the Full Disk Access pane (single source; was duplicated 3×).
+    static func openSettings() {
+        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles") {
+            NSWorkspace.shared.open(url)
+        }
+    }
+}
+
+/// Shared, always-current FDA status for the popover affordance + onboarding gate.
+/// Follows the app's monitor pattern (MemoryMonitor/ProcessMonitor/UpdaterModel).
+@MainActor
+final class FullDiskAccessModel: ObservableObject {
+    @Published private(set) var status: FullDiskAccessStatus
+    /// In-memory per-launch guard so onAppear/didBecomeActive can't open onboarding twice.
+    @Published var onboardingRequestedThisLaunch = false
+
+    private let probe: () -> FullDiskAccessStatus
+
+    init(probe: @escaping () -> FullDiskAccessStatus = FullDiskAccessProbe.system) {
+        self.probe = probe
+        self.status = probe()   // synchronous initial state — no default-false race
+    }
+
+    func refresh() { status = probe() }
+}
 
 /// Cross-cutting Full Disk Access onboarding. Presented as a sheet whenever a scan/uninstall
 /// fails with a permission error (see `FullDiskAccessClassifier` in TrimCore).
