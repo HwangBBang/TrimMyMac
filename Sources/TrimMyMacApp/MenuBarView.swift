@@ -128,6 +128,7 @@ struct MenuBarView: View {
     @ObservedObject var memoryMonitor: MemoryMonitor
     @ObservedObject var cpuMonitor: CPUMonitor
     @ObservedObject var agentMonitor: AgentSessionMonitor
+    @ObservedObject var processMonitor: ProcessMonitor
 
     @AppStorage("menubar.showCPU") private var showCPU = true
     @AppStorage("menubar.showMEM") private var showMEM = true
@@ -187,14 +188,31 @@ struct MenuBarView: View {
         }
     }
 
+    @ViewBuilder
     private func pressurePill(_ pressure: MemoryPressure) -> some View {
-        HStack(spacing: 4) {
-            Circle().fill(pressure.pillColor).frame(width: 8, height: 8)
-            Text(pressure.koreanLabel).font(.caption).foregroundStyle(.secondary)
+        switch pressure {
+        case .normal:
+            // Muted presence dot — not a permanent "정상" label.
+            Circle().fill(.secondary.opacity(0.35)).frame(width: 6, height: 6)
+                .accessibilityLabel("메모리 압력 정상")
+        case .warning, .critical:
+            Button {
+                openWindow(id: "optimize")
+            } label: {
+                HStack(spacing: 4) {
+                    Circle().fill(pressure.pillColor).frame(width: 8, height: 8)
+                    Text(pressure.koreanLabel).font(.caption).bold()
+                    if pressure == .critical, let top = processMonitor.top.first {
+                        Text("· \(top.displayName)").font(.caption2).foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                }
+                .padding(.horizontal, 8).padding(.vertical, 3)
+                .background(pressure.pillColor.opacity(0.15), in: Capsule())
+            }
+            .buttonStyle(.plain)
+            .help("메모리 압력이 높습니다 — 최적화 열기")
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 3)
-        .background(pressure.pillColor.opacity(0.15), in: Capsule())
     }
 
     /// CPU usage card. Read-only: the menu-bar label owns CPU sampling (delta-based);
