@@ -4,8 +4,10 @@
 # key from the login keychain (the one created by Sparkle's generate_keys), so macOS
 # may prompt for keychain access — click Allow.
 #
-# Usage: ./scripts/release.sh <short-version> [build-number]
-#   e.g. ./scripts/release.sh 0.2.0
+# Usage: ./scripts/release.sh [short-version] [build-number]
+#   version defaults to the repo-root VERSION file; build defaults to commit count.
+#   e.g. ./scripts/release.sh          # uses VERSION file
+#        ./scripts/release.sh 0.2.0    # explicit override
 #
 # Then create a GitHub release tagged v<version> and upload dist/TrimMyMac-<version>.zip
 # and dist/appcast.xml. SUFeedURL points at releases/latest/download/appcast.xml.
@@ -15,8 +17,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 cd "${ROOT_DIR}"
 
-VERSION="${1:?usage: release.sh <short-version> [build-number]}"
-BUILD="${2:-$(date +%Y%m%d%H%M)}"
+VERSION="${1:-$(cat "${ROOT_DIR}/VERSION" 2>/dev/null || true)}"
+[[ -n "${VERSION}" ]] || { echo "ERROR: no version (pass an arg or create a VERSION file)" >&2; exit 1; }
+BUILD="${2:-$(git -C "${ROOT_DIR}" rev-list --count HEAD 2>/dev/null || date +%Y%m%d%H%M)}"
 REPO_SLUG="HwangBBang/TrimMyMac"
 DIST="${ROOT_DIR}/dist"
 APP_BUNDLE="${ROOT_DIR}/.build/bundle/TrimMyMac.app"
