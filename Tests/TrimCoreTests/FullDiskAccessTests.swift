@@ -74,3 +74,18 @@ struct FullDiskAccessStatusTests {
         #expect(FullDiskAccessStatus.from(probeError: err) == .unknown)
     }
 }
+
+@Suite("FullDiskAccessGate")
+struct FullDiskAccessGateTests {
+    @Test func onboardingOnlyWhenDeniedAndUnseen() {
+        #expect(FullDiskAccessGate.shouldShowOnboarding(seen: false, status: .denied) == true)
+        #expect(FullDiskAccessGate.shouldShowOnboarding(seen: true,  status: .denied) == false)
+        #expect(FullDiskAccessGate.shouldShowOnboarding(seen: false, status: .granted) == false)
+        #expect(FullDiskAccessGate.shouldShowOnboarding(seen: false, status: .unknown) == false)
+    }
+    @Test func affordanceMapping() {
+        #expect(FullDiskAccessGate.affordance(for: .denied) == .strip)
+        #expect(FullDiskAccessGate.affordance(for: .unknown) == .quietLink)
+        #expect(FullDiskAccessGate.affordance(for: .granted) == .hidden)
+    }
+}

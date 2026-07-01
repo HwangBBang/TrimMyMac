@@ -63,3 +63,25 @@ public enum FullDiskAccessStatus: Equatable, Sendable {
         return FullDiskAccessClassifier.needsFullDiskAccess(for: error) ? .denied : .unknown
     }
 }
+
+/// What the popover should render for a given FDA status.
+public enum FDAAffordance: Equatable, Sendable {
+    case strip      // denied: amber "디스크 기능 제한" + [켜기]
+    case quietLink  // unknown: no-alarm "설정 열기" link
+    case hidden     // granted: nothing
+}
+
+/// Pure UI-gating decisions for Full Disk Access.
+public enum FullDiskAccessGate {
+    /// Onboarding shows once, only when denial is positively confirmed.
+    public static func shouldShowOnboarding(seen: Bool, status: FullDiskAccessStatus) -> Bool {
+        !seen && status == .denied
+    }
+    public static func affordance(for status: FullDiskAccessStatus) -> FDAAffordance {
+        switch status {
+        case .denied:  return .strip
+        case .unknown: return .quietLink
+        case .granted: return .hidden
+        }
+    }
+}
