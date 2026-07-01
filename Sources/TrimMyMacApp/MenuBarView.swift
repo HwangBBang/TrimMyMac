@@ -29,7 +29,7 @@ extension MemoryPressure {
 struct MenuBarLabel: View {
     @ObservedObject var memoryMonitor: MemoryMonitor
     @ObservedObject var cpuMonitor: CPUMonitor
-    @ObservedObject var agentMonitor: AgentSessionMonitor
+    @ObservedObject var processMonitor: ProcessMonitor
 
     @AppStorage("menubar.showCPU") private var showCPU = true
     @AppStorage("menubar.showMEM") private var showMEM = true
@@ -107,17 +107,18 @@ struct MenuBarLabel: View {
 
     private func refresh() {
         memSample = memoryMonitor.sample()
+        memoryMonitor.appendHistory()                 // single append site (Task 1)
         diskSample = disk.sample(volume: URL(fileURLWithPath: "/"))
         // CPU is delta-based and MUST be sampled from exactly one place; the
         // always-present menu-bar label owns that cadence. The popover only reads.
         cpuMonitor.sample()
 
-        // Agent enumeration is heavier than a couple of syscalls, so throttle it to
-        // ~every 3rd tick (~3 s) and only when the feature is on. The popover reads
-        // agentMonitor.sessions; it never samples (delta-based → single sampler).
+        // Process enumeration is heavier; throttle to ~every 3rd tick. Gate the full
+        // scan: always sample when an Optimize/popover surface may show it OR pressure
+        // is not normal; otherwise still refresh occasionally for the critical preview.
         agentTick &+= 1
-        if agentsEnabled, agentTick % 3 == 1 {
-            agentMonitor.sample(enabled: Set(AgentKind.allCases))
+        if agentTick % 3 == 1 {
+            processMonitor.sample(limit: 8, agentsEnabled: agentsEnabled)
         }
     }
 }
@@ -127,7 +128,6 @@ struct MenuBarLabel: View {
 struct MenuBarView: View {
     @ObservedObject var memoryMonitor: MemoryMonitor
     @ObservedObject var cpuMonitor: CPUMonitor
-    @ObservedObject var agentMonitor: AgentSessionMonitor
     @ObservedObject var processMonitor: ProcessMonitor
 
     @AppStorage("agents.enabled") private var agentsEnabled = true
@@ -259,33 +259,21 @@ struct MenuBarView: View {
         }
     }
 
-    /// Per-session CPU/RAM for detected agentic AI CLIs (Claude Code, Codex).
-    /// Read-only: the menu-bar label owns sampling.
+    /// Per-session memory for detected agentic AI CLIs (Claude Code, Codex).
+    /// Read-only: the menu-bar label owns sampling via processMonitor.
     private var agentSection: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("AI 세션").font(.subheadline).bold()
-            if agentMonitor.sessions.isEmpty {
+            let shown = Array(processMonitor.agentSessions.prefix(8))
+            if shown.isEmpty {
                 Text("감지된 세션 없음").font(.callout).foregroundStyle(.secondary)
             } else {
-                // A ScrollView collapses to ~0 height inside this content-sized popover,
-                // so render a bounded top-N list (already sorted by CPU then memory).
-                let shown = Array(agentMonitor.sessions.prefix(8))
-                ForEach(shown) { session in
-                    HStack(spacing: 8) {
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text(session.kind.displayName).font(.callout)
-                            Text("PID \(session.pid)").font(.caption2).foregroundStyle(.secondary)
-                        }
+                ForEach(shown) { s in
+                    HStack {
+                        Text(s.displayName).font(.callout)
                         Spacer()
-                        Text("CPU \(session.cpu)%").font(.callout).monospacedDigit()
-                        Text(humanReadableBytes(session.memory))
-                            .font(.callout).monospacedDigit()
-                            .frame(width: 76, alignment: .trailing)
+                        Text(humanReadableBytes(s.footprint)).font(.callout).monospacedDigit()
                     }
-                }
-                if agentMonitor.sessions.count > shown.count {
-                    Text("+ \(agentMonitor.sessions.count - shown.count)개 더")
-                        .font(.caption2).foregroundStyle(.secondary)
                 }
             }
         }
