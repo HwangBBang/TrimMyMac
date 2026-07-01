@@ -53,3 +53,24 @@ struct FullDiskAccessTests {
         #expect(FullDiskAccessClassifier.needsFullDiskAccess(for: err) == false)
     }
 }
+
+@Suite("FullDiskAccessStatus")
+struct FullDiskAccessStatusTests {
+    @Test func nilErrorIsGranted() {
+        #expect(FullDiskAccessStatus.from(probeError: nil) == .granted)
+    }
+    @Test func epermIsDenied() {
+        #expect(FullDiskAccessStatus.from(probeError: POSIXError(.EPERM)) == .denied)
+    }
+    @Test func eaccesIsDenied() {
+        #expect(FullDiskAccessStatus.from(probeError: POSIXError(.EACCES)) == .denied)
+    }
+    @Test func cocoaNoPermissionIsDenied() {
+        let err = NSError(domain: NSCocoaErrorDomain, code: NSFileReadNoPermissionError)
+        #expect(FullDiskAccessStatus.from(probeError: err) == .denied)
+    }
+    @Test func enoentIsUnknownNotGranted() {
+        let err = NSError(domain: NSPOSIXErrorDomain, code: Int(ENOENT))
+        #expect(FullDiskAccessStatus.from(probeError: err) == .unknown)
+    }
+}

@@ -49,3 +49,17 @@ public enum FullDiskAccessClassifier {
         }
     }
 }
+
+/// Three-state Full Disk Access result. `unknown` is never treated as `granted`,
+/// so a genuinely-denied user whose probe returns an unexpected error is not hidden.
+public enum FullDiskAccessStatus: Equatable, Sendable {
+    case granted, denied, unknown
+
+    /// Maps a probe read outcome to a status:
+    /// nil error → granted; a permission wall (EPERM/EACCES/Cocoa no-permission) → denied;
+    /// anything else (e.g. ENOENT) → unknown. We never guess `granted` from an error.
+    public static func from(probeError error: Error?) -> FullDiskAccessStatus {
+        guard let error else { return .granted }
+        return FullDiskAccessClassifier.needsFullDiskAccess(for: error) ? .denied : .unknown
+    }
+}
