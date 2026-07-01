@@ -58,7 +58,7 @@ struct MemoryHistoryTests {
         // cutoff = 0; sample(0) is exactly at cutoff (kept), all within window
         #expect(kept.count == 3)
         let kept2 = MemoryMonitor.trimmed(samples, keeping: 30, now: t0.addingTimeInterval(120))
-        #expect(kept2.isEmpty)   // newest is at 115, cutoff is 90 → none within 30s... 115>=90 so 1
+        #expect(kept2.map(\.time) == [samples[2].time])   // cutoff 90 → only sample(115) survives
     }
 
     @Test func trimmedKeepsWithinWindow() {
