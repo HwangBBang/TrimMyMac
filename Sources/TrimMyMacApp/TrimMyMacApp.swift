@@ -38,5 +38,9 @@ struct TrimMyMacApp: App {
             OptimizePanel(memoryMonitor: memoryMonitor, processMonitor: processMonitor)
         }
         .windowResizability(.contentSize)
+
+        Settings {
+            SettingsView(updater: updater)
+        }
     }
 }

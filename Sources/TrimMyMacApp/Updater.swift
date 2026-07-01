@@ -10,6 +10,10 @@ import Sparkle
 final class UpdaterModel: ObservableObject {
     /// Mirrors `updater.canCheckForUpdates` so a button can disable itself mid-check.
     @Published var canCheckForUpdates = false
+    /// Set to `true` when Sparkle finds a valid update. Drives the "업데이트 있음" affordance
+    /// in the popover. Wiring `SPUUpdaterDelegate.updater(_:didFindValidUpdate:)` is a
+    /// follow-up; for v1 this defaults to `false` so the affordance is simply hidden.
+    @Published var updateAvailable = false
 
     private let controller: SPUStandardUpdaterController
 

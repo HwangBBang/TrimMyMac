@@ -130,9 +130,6 @@ struct MenuBarView: View {
     @ObservedObject var agentMonitor: AgentSessionMonitor
     @ObservedObject var processMonitor: ProcessMonitor
 
-    @AppStorage("menubar.showCPU") private var showCPU = true
-    @AppStorage("menubar.showMEM") private var showMEM = true
-    @AppStorage("menubar.showSSD") private var showSSD = true
     @AppStorage("agents.enabled") private var agentsEnabled = true
 
     @ObservedObject var updater: UpdaterModel
@@ -162,8 +159,6 @@ struct MenuBarView: View {
             }
             Divider()
             actionButtons
-            Divider()
-            settingsSection
             Divider()
             updateRow
         }
@@ -296,31 +291,17 @@ struct MenuBarView: View {
         }
     }
 
-    /// Collapsible settings: which metrics appear in the menu bar + agent tracking.
-    private var settingsSection: some View {
-        DisclosureGroup("설정") {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("메뉴바 표시").font(.caption).foregroundStyle(.secondary)
-                Toggle("CPU", isOn: $showCPU)
-                Toggle("메모리", isOn: $showMEM)
-                Toggle("디스크", isOn: $showSSD)
-                Divider()
-                Toggle("AI 세션 추적", isOn: $agentsEnabled)
-            }
-            .toggleStyle(.switch)
-            .padding(.top, 4)
-        }
-        .font(.subheadline)
-    }
-
-    /// App version + manual update check (Sparkle). Background checks run on a schedule.
+    /// App version + update-available affordance + Settings link.
     private var updateRow: some View {
         HStack {
             Text("v\(appVersion)").font(.caption).foregroundStyle(.secondary)
+            if updater.updateAvailable {
+                Button("업데이트 있음") { updater.checkForUpdates() }
+                    .controlSize(.small).buttonStyle(.borderedProminent)
+            }
             Spacer()
-            Button("업데이트 확인") { updater.checkForUpdates() }
+            SettingsLink { Text("설정…") }
                 .controlSize(.small)
-                .disabled(!updater.canCheckForUpdates)
         }
     }
 
