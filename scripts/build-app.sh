@@ -11,8 +11,11 @@ cd "${ROOT_DIR}"
 APP_NAME="TrimMyMac"
 EXE_NAME="TrimMyMacApp"
 BUNDLE_ID="com.hbh0112.trimmymac"
-SHORT_VERSION="${SHORT_VERSION:-0.1.0}"
-BUILD_VERSION="${BUILD_VERSION:-1}"
+# Version single-sourced from the repo-root VERSION file; CFBundleVersion (build
+# number) auto-increments from commit count so Sparkle sees a monotonic value.
+# Both stay env-overridable (release.sh passes them explicitly).
+SHORT_VERSION="${SHORT_VERSION:-$(cat "${ROOT_DIR}/VERSION" 2>/dev/null || echo 0.1.0)}"
+BUILD_VERSION="${BUILD_VERSION:-$(git -C "${ROOT_DIR}" rev-list --count HEAD 2>/dev/null || echo 1)}"
 CODESIGN_IDENTITY="${CODESIGN_IDENTITY:-TrimMyMac Self-Signed}"
 INSTALL_DIR="/Applications"
 
